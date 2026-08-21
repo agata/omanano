@@ -121,7 +121,10 @@ TextArea {
     return ""
   }
 
-  color: "transparent"
+  // IME preedit text is not part of `text` until conversion is committed, so
+  // the syntax layer cannot render it. Temporarily reveal the native editor
+  // while composing; the highlighted layer returns immediately on commit.
+  color: inputMethodComposing ? foregroundColor : "transparent"
   selectedTextColor: foregroundColor
   selectionColor: alpha(accentColor, 0.5)
 
@@ -131,6 +134,8 @@ TextArea {
   }
 
   background: Item {
+    opacity: root.inputMethodComposing ? 0 : 1
+
     Text {
       x: root.leftPadding
       y: root.topPadding
