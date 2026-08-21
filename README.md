@@ -1,55 +1,92 @@
-# OmaNano Notes
+# OmaNano
 
-OmaNano is a local-first Markdown notes library for Omarchy. Its MVP focuses on the part that simple scratchpads miss: a calm, information-rich note list that makes old notes easy to find again.
+**Your notes, one keystroke away.**
 
-## MVP
+OmaNano is a local-first Markdown notes library designed for Omarchy. Capture a thought from Waybar, find it later in a calm three-pane library, or detach one note beside the work it belongs to.
 
-- Three-pane categories, note list, and Markdown editor
-- Preview rows grouped by recency
-- Empty-list call to action for creating the first note
-- Full-text, incremental search
-- Pinning, folders, Trash, and restore
-- Debounced atomic autosave
-- Subtle Markdown highlighting for headings, lists, tasks, code, and URLs
-- Keyboard and mouse navigation
-- Omarchy theme-aware floating panel and optional bar widget
-- Accent-aware selected categories and note rows
-- Open the complete library as a normal Hyprland tiled window
-- Detach the selected note into a separate Hyprland tiled window
-- Plain Markdown files under `~/.local/share/omanano/notes/`
+![OmaNano library](preview.png)
 
-## Install from this checkout
+## Three ways to stay in flow
+
+- **Quick panel** — open OmaNano from Waybar for fast capture without rearranging your workspace.
+- **Library window** — move the complete app into the Hyprland tiling layout when you want to browse, organize, and write for longer.
+- **Detached note** — place one note beside a browser, terminal, editor, or call while the library remains available.
+
+![OmaNano library and detached note](docs/screenshots/detach-workflow.png)
+
+## What it can do
+
+- Browse notes by recency, folder, pinned state, or Trash
+- Search titles and Markdown content instantly
+- Edit plain Markdown with subtle highlighting for headings, lists, tasks, code, and URLs
+- Open links with `Ctrl+click`
+- Create folders, pin important notes, trash notes, and restore them later
+- Autosave safely with debounced, atomic writes
+- Navigate by keyboard or mouse
+- Follow the active Omarchy theme and accent color
+- Keep all notes as ordinary files under `~/.local/share/omanano/notes/`
+
+OmaNano makes no network requests and requires no account. Your notes stay on your machine in a format you can read with any text editor.
+
+## Install
+
+Install from the Omarchy Plugin Marketplace, or directly from GitHub:
 
 ```bash
-cd omanano
-omarchy plugin add "$PWD" --enable
+omarchy plugin add https://github.com/agata/omanano --enable
+```
+
+If the widget is not already visible in Waybar, add it to the right section:
+
+```bash
 omarchy bar put io.github.agata.omanano --section right
 ```
 
-The plugin keeps notes outside its installation directory. Removing or reinstalling the plugin does not delete user notes.
+## Remove
+
+```bash
+omarchy plugin remove io.github.agata.omanano
+```
+
+Removing or reinstalling the plugin preserves your notes in `~/.local/share/omanano/`.
 
 ## Keyboard
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+N` | New note |
+| `Ctrl+N` | Create a note |
 | `Ctrl+F` or `/` | Search notes |
-| `Ctrl+P` | Pin/unpin selected note |
+| `Ctrl+P` | Pin or unpin the selected note |
 | `Ctrl+S` | Save now |
-| `Ctrl+Enter` | Detach the selected note into a separate tiled window |
-| `Ctrl+Shift+Enter` | Open the complete OmaNano library in a normal tiled window |
-| `Ctrl+click` | Open a URL under the pointer |
-| `Ctrl+Delete` | Move selected note to Trash |
-| `Up` / `Down` | Select previous/next note while the list has focus |
+| `Ctrl+Enter` | Detach the selected note into a tiled window |
+| `Ctrl+Shift+Enter` | Open the complete library as a tiled window |
+| `Ctrl+click` | Open the URL under the pointer |
+| `Ctrl+Delete` | Move the selected note to Trash |
+| `Up` / `Down` | Select the previous or next note while the list has focus |
 | `Enter` | Focus the editor |
-| `Escape` | Clear search, then close |
+| `Escape` | Clear search, then close the panel |
 
-Use **Open in window** in the header when you want the complete library as a regular Hyprland tiled window. Use **Detach note** to keep that library open while moving the selected note into its own tiled editor. When detaching from the Waybar panel, the temporary panel closes after the note window appears.
+## Requirements
 
-## Development data directory
+- Omarchy 4 with the Quattro shell
+- Quickshell and Python 3, both included with Omarchy
 
-Set `OMANANO_DATA_DIR` when exercising the backend without touching real notes:
+No additional packages or online services are required.
+
+## Development
+
+Use `OMANANO_DATA_DIR` to exercise the storage backend without touching your notes:
 
 ```bash
 OMANANO_DATA_DIR=/tmp/omanano-test ./scripts/omanano-store list
 ```
+
+Run the storage test suite with:
+
+```bash
+bash tests/store_test.sh
+```
+
+## License
+
+OmaNano is available under the [MIT License](LICENSE).
