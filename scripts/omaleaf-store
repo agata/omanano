@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Small filesystem backend for the OmaLeaf Quickshell UI."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+import time
+import uuid
+from pathlib import Path
+
+
+DATA_ROOT = Path(os.environ.get("OMALEAF_DATA_DIR", "~/.local/share/omaleaf")).expanduser()
+NOTES_ROOT = DATA_ROOT / "notes"
+TRASH_ROOT = DATA_ROOT / "trash"
+STATE_PATH = DATA_ROOT / "state.json"
+
+
+def ensure_store() -> None:
+    NOTES_ROOT.mkdir(parents=True, exist_ok=True)
+    TRASH_ROOT.mkdir(parents=True, exist_ok=True)
+    if not STATE_PATH.exists():
+        write_json(STATE_PATH, {"pinned": []})
+
+
+def read_json(path: Path, fallback):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
+def write_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def safe_relative(raw: str) -> Path:
+    candidate = Path(raw)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("invalid note path")
+    return candidate
+
+
+def note_path(identifier: str, trashed: bool = False) -> Path:
+    relative = safe_relative(identifier)
+    root = TRASH_ROOT if trashed else NOTES_ROOT
+    path = (root / relative).resolve()
+    if root.resolve() not in path.parents:
+        raise ValueError("note path escapes data directory")
+    return path
+
+
+def clean_folder(raw: str) -> str:
+    value = str(raw or "").strip().replace("\\", "/").strip("/")
+    if not value:
+        return ""
+    parts = []
+    for part in value.split("/"):
+        if part in {".", ".."}:
+            raise ValueError("invalid folder path")
+        part = re.sub(r"[\x00-\x1f/:]+", "-", part).strip().strip(".")
+        if part and part not in {".", ".."}:
+            parts.append(part[:80])
+    return "/".join(parts)
+
+
+def title_and_snippet(content: str) -> tuple[str, str]:
+    useful = []
+    title = "Untitled"
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line == "---":
+            continue
+        cleaned = re.sub(r"^#{1,6}\s+", "", line)
+        cleaned = re.sub(r"^[-*+]\s+(?:\[[ xX]\]\s*)?", "", cleaned)
+        cleaned = re.sub(r"[`*_~]", "", cleaned).strip()
+        if not cleaned:
+            continue
+        if title == "Untitled":
+            title = cleaned[:120]
+        else:
+            useful.append(cleaned)
+        if len(" ".join(useful)) >= 180:
+            break
+    return title, " ".join(useful)[:180]
+
+
+def note_record(path: Path, trashed: bool, pinned: set[str]) -> dict:
+    root = TRASH_ROOT if trashed else NOTES_ROOT
+    relative = path.relative_to(root).as_posix()
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        content = ""
+    stat = path.stat()
+    title, snippet = title_and_snippet(content)
+    folder = path.parent.relative_to(root).as_posix()
+    if folder == ".":
+        folder = ""
+    return {
+        "id": relative,
+        "title": title,
+        "snippet": snippet,
+        "content": content,
+        "folder": folder,
+        "modified": int(stat.st_mtime * 1000),
+        "pinned": (not trashed and relative in pinned),
+        "openTasks": len(re.findall(r"^\s*[-*+]\s+\[ \]", content, flags=re.MULTILINE)),
+        "trashed": trashed,
+    }
+
+
+def list_store(_args) -> None:
+    ensure_store()
+    state = read_json(STATE_PATH, {"pinned": []})
+    pinned = set(state.get("pinned", []))
+    notes = []
+    for trashed, root in ((False, NOTES_ROOT), (True, TRASH_ROOT)):
+        for path in root.rglob("*.md"):
+            if path.is_file():
+                notes.append(note_record(path, trashed, pinned))
+    notes.sort(key=lambda item: (item["trashed"], not item["pinned"], -item["modified"], item["title"].lower()))
+    folder_names = {item["folder"] for item in notes if not item["trashed"] and item["folder"]}
+    for directory in NOTES_ROOT.rglob("*"):
+        if directory.is_dir():
+            folder_names.add(directory.relative_to(NOTES_ROOT).as_posix())
+    folders = sorted(folder_names, key=str.casefold)
+    print(json.dumps({"notes": notes, "folders": folders}, ensure_ascii=False))
+
+
+def create_note(args) -> None:
+    ensure_store()
+    folder = clean_folder(args.folder)
+    parent = NOTES_ROOT / folder
+    parent.mkdir(parents=True, exist_ok=True)
+    identifier = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}.md"
+    path = parent / identifier
+    path.write_text("# Untitled\n\n", encoding="utf-8")
+    print(json.dumps({"id": path.relative_to(NOTES_ROOT).as_posix()}))
+
+
+def create_folder(args) -> None:
+    ensure_store()
+    folder = clean_folder(args.name)
+    if not folder:
+        raise ValueError("folder name is empty")
+    (NOTES_ROOT / folder).mkdir(parents=True, exist_ok=True)
+    print(json.dumps({"folder": folder}))
+
+
+def pin_note(args) -> None:
+    ensure_store()
+    identifier = safe_relative(args.id).as_posix()
+    if not note_path(identifier).is_file():
+        raise FileNotFoundError(identifier)
+    state = read_json(STATE_PATH, {"pinned": []})
+    pinned = set(state.get("pinned", []))
+    if identifier in pinned:
+        pinned.remove(identifier)
+    else:
+        pinned.add(identifier)
+    state["pinned"] = sorted(pinned)
+    write_json(STATE_PATH, state)
+    print(json.dumps({"id": identifier, "pinned": identifier in pinned}))
+
+
+def trash_note(args) -> None:
+    ensure_store()
+    identifier = safe_relative(args.id).as_posix()
+    source = note_path(identifier)
+    if not source.is_file():
+        raise FileNotFoundError(identifier)
+    target = note_path(identifier, trashed=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        target = target.with_name(f"{target.stem}-{int(time.time())}{target.suffix}")
+    shutil.move(source, target)
+    state = read_json(STATE_PATH, {"pinned": []})
+    state["pinned"] = [value for value in state.get("pinned", []) if value != identifier]
+    write_json(STATE_PATH, state)
+    print(json.dumps({"id": target.relative_to(TRASH_ROOT).as_posix()}))
+
+
+def restore_note(args) -> None:
+    ensure_store()
+    identifier = safe_relative(args.id).as_posix()
+    source = note_path(identifier, trashed=True)
+    if not source.is_file():
+        raise FileNotFoundError(identifier)
+    target = note_path(identifier)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        target = target.with_name(f"{target.stem}-restored-{int(time.time())}{target.suffix}")
+    shutil.move(source, target)
+    print(json.dumps({"id": target.relative_to(NOTES_ROOT).as_posix()}))
+
+
+def delete_note(args) -> None:
+    ensure_store()
+    path = note_path(args.id, trashed=True)
+    if not path.is_file():
+        raise FileNotFoundError(args.id)
+    path.unlink()
+    print(json.dumps({"deleted": True}))
+
+
+def move_note(args) -> None:
+    ensure_store()
+    identifier = safe_relative(args.id).as_posix()
+    source = note_path(identifier)
+    if not source.is_file():
+        raise FileNotFoundError(identifier)
+    folder = clean_folder(args.folder)
+    target_dir = NOTES_ROOT / folder
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / source.name
+    if target.resolve() != source.resolve() and target.exists():
+        target = target.with_name(f"{target.stem}-{int(time.time())}{target.suffix}")
+    if target.resolve() != source.resolve():
+        shutil.move(source, target)
+    next_id = target.relative_to(NOTES_ROOT).as_posix()
+    state = read_json(STATE_PATH, {"pinned": []})
+    pinned = set(state.get("pinned", []))
+    if identifier in pinned:
+        pinned.remove(identifier)
+        pinned.add(next_id)
+        state["pinned"] = sorted(pinned)
+        write_json(STATE_PATH, state)
+    print(json.dumps({"id": next_id}))
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("list").set_defaults(func=list_store)
+    create = subparsers.add_parser("create")
+    create.add_argument("--folder", default="")
+    create.set_defaults(func=create_note)
+    folder = subparsers.add_parser("create-folder")
+    folder.add_argument("name")
+    folder.set_defaults(func=create_folder)
+    for command, handler in (("pin", pin_note), ("trash", trash_note), ("restore", restore_note), ("delete", delete_note)):
+        item = subparsers.add_parser(command)
+        item.add_argument("id")
+        item.set_defaults(func=handler)
+    move = subparsers.add_parser("move")
+    move.add_argument("id")
+    move.add_argument("--folder", default="")
+    move.set_defaults(func=move_note)
+    return parser
+
+
+def main() -> int:
+    try:
+        args = build_parser().parse_args()
+        args.func(args)
+        return 0
+    except (OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

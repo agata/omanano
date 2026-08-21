@@ -1,0 +1,767 @@
+import QtQuick
+import QtQuick.Controls
+import Quickshell
+import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
+
+Item {
+  id: root
+
+  property var shell: null
+  property var manifest: null
+  property bool opened: false
+  property var notes: []
+  property var folders: []
+  property string selectedId: ""
+  property string category: "all"
+  property string searchText: ""
+  property string statusText: "Ready"
+  property bool editorLoading: false
+  property bool editorDirty: false
+  property bool suppressFileChange: false
+  property bool folderEditing: false
+  property bool deleteArmed: false
+  property string pendingAction: ""
+  property string pendingSelectId: ""
+
+  readonly property string pluginId: "io.github.agata.omaleaf"
+  readonly property string home: Quickshell.env("HOME")
+  readonly property string dataRoot: home + "/.local/share/omaleaf"
+  readonly property string pluginDir: manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : dataRoot
+  readonly property string storePath: pluginDir + "/scripts/omaleaf-store"
+  readonly property var selectedNote: findNote(selectedId)
+  readonly property var visibleNotes: filteredNotes()
+  readonly property var folderOptions: buildFolderOptions()
+
+  function open(_payloadJson) {
+    opened = true
+    window.visible = true
+    deleteArmed = false
+    refreshNotes()
+    Qt.callLater(function() { noteList.forceActiveFocus() })
+  }
+
+  function close() {
+    flushSave()
+    opened = false
+    window.visible = false
+  }
+
+  function requestClose() {
+    if (shell && typeof shell.hide === "function") shell.hide(pluginId)
+    else close()
+  }
+
+  function handleEscape() {
+    if (folderEditing) {
+      folderEditing = false
+      folderField.text = ""
+      noteList.forceActiveFocus()
+    } else if (searchText) {
+      searchField.text = ""
+      searchText = ""
+      noteList.forceActiveFocus()
+    } else {
+      requestClose()
+    }
+  }
+
+  function findNote(id) {
+    for (var i = 0; i < notes.length; i++) {
+      if (String(notes[i].id) === String(id)) return notes[i]
+    }
+    return null
+  }
+
+  function plainSnippet(content) {
+    var lines = String(content || "").split("\n")
+    var useful = []
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (!line || line === "---") continue
+      line = line.replace(/^#{1,6}\s+/, "").replace(/^[-*+]\s+(\[[ xX]\]\s*)?/, "").replace(/[`*_~]/g, "").trim()
+      if (line) useful.push(line)
+      if (useful.join(" ").length > 220) break
+    }
+    return useful.length > 1 ? useful.slice(1).join(" ").slice(0, 180) : ""
+  }
+
+  function inferredTitle(content) {
+    var lines = String(content || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim().replace(/^#{1,6}\s+/, "").replace(/^[-*+]\s+(\[[ xX]\]\s*)?/, "").replace(/[`*_~]/g, "").trim()
+      if (line && line !== "---") return line.slice(0, 120)
+    }
+    return "Untitled"
+  }
+
+  function groupFor(note) {
+    if (note.trashed) return "TRASH"
+    if (note.pinned) return "PINNED"
+    var now = new Date()
+    var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    var modified = Number(note.modified || 0)
+    if (modified >= midnight) return "TODAY"
+    if (modified >= midnight - 6 * 86400000) return "PREVIOUS 7 DAYS"
+    return "OLDER"
+  }
+
+  function filteredNotes() {
+    var query = String(searchText || "").trim().toLocaleLowerCase()
+    var output = []
+    var todayStart = new Date()
+    todayStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), todayStart.getDate()).getTime()
+    for (var i = 0; i < notes.length; i++) {
+      var note = notes[i]
+      var include = false
+      if (category === "trash") include = !!note.trashed
+      else if (note.trashed) include = false
+      else if (category === "all") include = true
+      else if (category === "pinned") include = !!note.pinned
+      else if (category === "today") include = Number(note.modified || 0) >= todayStart
+      else if (category.indexOf("folder:") === 0) include = String(note.folder || "") === category.slice(7)
+      if (!include) continue
+      if (query) {
+        var haystack = (String(note.title || "") + "\n" + String(note.content || "") + "\n" + String(note.folder || "")).toLocaleLowerCase()
+        if (haystack.indexOf(query) < 0) continue
+      }
+      var copy = {}
+      for (var key in note) copy[key] = note[key]
+      copy.group = groupFor(note)
+      output.push(copy)
+    }
+    return output
+  }
+
+  function buildFolderOptions() {
+    var result = [{ label: "Inbox", value: "" }]
+    for (var i = 0; i < folders.length; i++) result.push({ label: String(folders[i]), value: String(folders[i]) })
+    return result
+  }
+
+  function categoryLabel() {
+    if (category === "all") return "All Notes"
+    if (category === "pinned") return "Pinned"
+    if (category === "today") return "Today"
+    if (category === "trash") return "Trash"
+    if (category.indexOf("folder:") === 0) return category.slice(7)
+    return "Notes"
+  }
+
+  function relativeTime(milliseconds) {
+    var value = Number(milliseconds || 0)
+    var date = new Date(value)
+    var now = new Date()
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    if (value >= today) return Qt.formatTime(date, "HH:mm")
+    var yesterday = today - 86400000
+    if (value >= yesterday) return "Yesterday"
+    if (date.getFullYear() === now.getFullYear()) return Qt.formatDate(date, "MMM d")
+    return Qt.formatDate(date, "yyyy-MM-dd")
+  }
+
+  function selectCategory(nextCategory) {
+    category = String(nextCategory)
+    deleteArmed = false
+    Qt.callLater(function() {
+      if (visibleNotes.length > 0) selectNote(String(visibleNotes[0].id))
+      else selectNote("")
+      noteList.forceActiveFocus()
+    })
+  }
+
+  function selectNote(id) {
+    if (String(id) === selectedId) return
+    flushSave()
+    selectedId = String(id || "")
+    deleteArmed = false
+    loadEditor()
+  }
+
+  function loadEditor() {
+    editorLoading = true
+    editor.text = selectedNote ? String(selectedNote.content || "") : ""
+    editor.cursorPosition = 0
+    editorDirty = false
+    editorLoading = false
+  }
+
+  function ensureVisibleSelection() {
+    if (selectedVisibleIndex() >= 0) return
+    if (visibleNotes.length > 0) selectNote(String(visibleNotes[0].id))
+    else selectNote("")
+  }
+
+  function selectedVisibleIndex() {
+    for (var i = 0; i < visibleNotes.length; i++) {
+      if (String(visibleNotes[i].id) === selectedId) return i
+    }
+    return -1
+  }
+
+  function moveSelection(delta) {
+    if (visibleNotes.length === 0) return
+    var index = selectedVisibleIndex()
+    if (index < 0) index = delta < 0 ? 0 : -1
+    index = Math.max(0, Math.min(visibleNotes.length - 1, index + delta))
+    selectNote(String(visibleNotes[index].id))
+    noteList.positionViewAtIndex(index, ListView.Contain)
+  }
+
+  function updateSelectedInMemory(content) {
+    if (!selectedNote) return
+    var next = []
+    for (var i = 0; i < notes.length; i++) {
+      var item = notes[i]
+      if (String(item.id) === selectedId) {
+        var copy = {}
+        for (var key in item) copy[key] = item[key]
+        copy.content = String(content)
+        copy.title = inferredTitle(content)
+        copy.snippet = plainSnippet(content)
+        copy.modified = Date.now()
+        copy.openTasks = (String(content).match(/^\s*[-*+]\s+\[ \]/gm) || []).length
+        next.push(copy)
+      } else next.push(item)
+    }
+    notes = next
+  }
+
+  function flushSave() {
+    if (editorLoading || !editorDirty || !selectedNote || selectedNote.trashed) return
+    saveTimer.stop()
+    suppressFileChange = true
+    noteFile.setText(editor.text)
+    updateSelectedInMemory(editor.text)
+    editorDirty = false
+    statusText = "Saved"
+    suppressTimer.restart()
+  }
+
+  function refreshNotes() {
+    if (listProcess.running) return
+    listProcess.outputText = ""
+    listProcess.command = [storePath, "list"]
+    listProcess.running = true
+    statusText = notes.length ? statusText : "Loading notes…"
+  }
+
+  function runAction(name, args, selectResult) {
+    if (actionProcess.running) return
+    flushSave()
+    pendingAction = name
+    pendingSelectId = selectResult ? "@result" : ""
+    actionProcess.outputText = ""
+    actionProcess.command = [storePath].concat(args)
+    actionProcess.running = true
+  }
+
+  function createNote() {
+    var folder = category.indexOf("folder:") === 0 ? category.slice(7) : ""
+    runAction("create", ["create", "--folder", folder], true)
+  }
+
+  function togglePin() {
+    if (!selectedNote || selectedNote.trashed) return
+    runAction("pin", ["pin", selectedId], false)
+  }
+
+  function requestTrash() {
+    if (!selectedNote || selectedNote.trashed) return
+    if (!deleteArmed) {
+      deleteArmed = true
+      deleteTimer.restart()
+      statusText = "Press Trash again to move “" + selectedNote.title + "” to Trash"
+      return
+    }
+    runAction("trash", ["trash", selectedId], false)
+    selectedId = ""
+    deleteArmed = false
+  }
+
+  function restoreSelected() {
+    if (!selectedNote || !selectedNote.trashed) return
+    runAction("restore", ["restore", selectedId], true)
+  }
+
+  function requestPermanentDelete() {
+    if (!selectedNote || !selectedNote.trashed) return
+    if (!deleteArmed) {
+      deleteArmed = true
+      deleteTimer.restart()
+      statusText = "Press Delete forever again; this cannot be undone"
+      return
+    }
+    runAction("delete", ["delete", selectedId], false)
+    selectedId = ""
+    deleteArmed = false
+  }
+
+  function createFolder() {
+    var name = String(folderField.text || "").trim()
+    if (!name) return
+    runAction("create-folder", ["create-folder", name], false)
+    folderEditing = false
+    folderField.text = ""
+  }
+
+  function moveSelectedTo(folder) {
+    if (!selectedNote || selectedNote.trashed || String(selectedNote.folder || "") === String(folder || "")) return
+    runAction("move", ["move", selectedId, "--folder", String(folder || "")], true)
+  }
+
+  Timer { id: saveTimer; interval: 420; onTriggered: root.flushSave() }
+  Timer { id: suppressTimer; interval: 800; onTriggered: root.suppressFileChange = false }
+  Timer { id: deleteTimer; interval: 3200; onTriggered: root.deleteArmed = false }
+  Timer { id: pollTimer; interval: 4000; repeat: true; running: root.opened; onTriggered: if (!editor.activeFocus && !saveTimer.running) root.refreshNotes() }
+
+  FileView {
+    id: noteFile
+    path: root.selectedNote
+      ? root.dataRoot + (root.selectedNote.trashed ? "/trash/" : "/notes/") + String(root.selectedNote.id)
+      : ""
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onFileChanged: {
+      if (root.suppressFileChange) root.suppressFileChange = false
+      else if (!editor.activeFocus && !saveTimer.running) root.refreshNotes()
+    }
+  }
+
+  Process {
+    id: listProcess
+    property string outputText: ""
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: listProcess.outputText = String(text || "").trim() }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.statusText = message
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.statusText = root.statusText || "Could not load notes"
+        return
+      }
+      try {
+        var result = JSON.parse(listProcess.outputText || "{}")
+        var previousId = root.selectedId
+        root.notes = Array.isArray(result.notes) ? result.notes : []
+        root.folders = Array.isArray(result.folders) ? result.folders : []
+        var wanted = root.pendingSelectId
+        root.pendingSelectId = ""
+        if (wanted && wanted !== "@result") root.selectedId = wanted
+        if (!root.findNote(root.selectedId)) {
+          var entries = root.filteredNotes()
+          root.selectedId = entries.length ? String(entries[0].id) : ""
+        }
+        if (root.selectedId !== previousId || !editor.activeFocus || !root.selectedNote) root.loadEditor()
+        root.statusText = root.notes.filter(function(note) { return !note.trashed }).length + " notes"
+      } catch (error) {
+        root.statusText = "Could not read the notes index"
+      }
+    }
+  }
+
+  Process {
+    id: actionProcess
+    property string outputText: ""
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: actionProcess.outputText = String(text || "").trim() }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message) root.statusText = message
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.statusText = "Action failed" + (root.statusText ? " · " + root.statusText : "")
+        root.pendingSelectId = ""
+        return
+      }
+      try {
+        var result = JSON.parse(actionProcess.outputText || "{}")
+        if (root.pendingSelectId === "@result" && result.id) root.pendingSelectId = String(result.id)
+        else root.pendingSelectId = root.selectedId
+        if (root.pendingAction === "create-folder" && result.folder) root.category = "folder:" + String(result.folder)
+      } catch (_error) {
+        root.pendingSelectId = root.selectedId
+      }
+      root.statusText = "Updated"
+      root.refreshNotes()
+    }
+  }
+
+  PanelWindow {
+    id: window
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "omarchy-omaleaf"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    Rectangle {
+      anchors.fill: parent
+      color: "transparent"
+      MouseArea { anchors.fill: parent; onClicked: root.requestClose() }
+    }
+
+    Shortcut { sequence: "Escape"; onActivated: root.handleEscape() }
+    Shortcut { sequence: "Ctrl+N"; onActivated: root.createNote() }
+    Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
+    Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
+    Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
+    Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
+
+    BorderSurface {
+      id: card
+      anchors.top: parent.top
+      anchors.topMargin: Style.space(48)
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: Math.min(parent.width - Style.space(28), Style.space(1240))
+      height: Math.min(parent.height - Style.space(70), Style.space(780))
+      color: Color.popups.background
+      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+      radius: Style.cornerRadius
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      Column {
+        anchors.fill: parent
+        anchors.margins: Style.space(16)
+        spacing: Style.space(10)
+
+        Row {
+          width: parent.width
+          height: Style.space(48)
+          spacing: Style.space(12)
+
+          Column {
+            width: parent.width - newButton.width - parent.spacing
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+            Text {
+              text: "OMALEAF  /  " + root.categoryLabel().toUpperCase()
+              color: Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+            Text {
+              text: "Find the note first. Writing stays simple."
+              color: Util.alpha(Color.foreground, 0.56)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
+          Button { id: newButton; anchors.verticalCenter: parent.verticalCenter; text: "New note"; iconText: "+"; active: true; onClicked: root.createNote() }
+        }
+
+        Rectangle { width: parent.width; height: 1; color: Util.alpha(Color.foreground, 0.18) }
+
+        Row {
+          width: parent.width
+          height: parent.height - y - statusBar.height - parent.spacing
+          spacing: Style.space(10)
+
+          BorderSurface {
+            id: sidebar
+            width: Math.max(Style.space(170), Math.min(Style.space(210), parent.width * 0.17))
+            height: parent.height
+            color: Util.alpha(Color.foreground, 0.024)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            radius: Style.cornerRadius
+
+            Column {
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(4)
+
+              Text { text: "LIBRARY"; color: Util.alpha(Color.foreground, 0.52); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; font.bold: true }
+              CategoryButton { label: "All Notes"; count: root.notes.filter(function(n) { return !n.trashed }).length; selected: root.category === "all"; onActivated: root.selectCategory("all") }
+              CategoryButton { label: "Pinned"; count: root.notes.filter(function(n) { return !n.trashed && n.pinned }).length; selected: root.category === "pinned"; onActivated: root.selectCategory("pinned") }
+              CategoryButton { label: "Today"; count: -1; selected: root.category === "today"; onActivated: root.selectCategory("today") }
+
+              Item { width: 1; height: Style.space(7) }
+              Row {
+                width: parent.width
+                height: Style.space(24)
+                Text { width: parent.width - addFolderButton.width; anchors.verticalCenter: parent.verticalCenter; text: "FOLDERS"; color: Util.alpha(Color.foreground, 0.52); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; font.bold: true }
+                Button { id: addFolderButton; text: "+"; tooltipText: "New folder"; onClicked: { root.folderEditing = true; Qt.callLater(function() { folderField.forceActiveFocus() }) } }
+              }
+
+              CategoryButton { label: "Inbox"; count: root.notes.filter(function(n) { return !n.trashed && !n.folder }).length; selected: root.category === "folder:"; onActivated: root.selectCategory("folder:") }
+              Repeater {
+                model: root.folders
+                delegate: CategoryButton {
+                  required property var modelData
+                  label: String(modelData)
+                  count: root.notes.filter(function(n) { return !n.trashed && String(n.folder || "") === String(modelData) }).length
+                  selected: root.category === "folder:" + String(modelData)
+                  onActivated: root.selectCategory("folder:" + String(modelData))
+                }
+              }
+
+              TextField {
+                id: folderField
+                visible: root.folderEditing
+                width: parent.width
+                placeholderText: "Folder name"
+                placeholderTextColor: Util.alpha(Color.foreground, 0.32)
+                onAccepted: root.createFolder()
+                Keys.onEscapePressed: function(event) { root.handleEscape(); event.accepted = true }
+              }
+
+              Item { width: 1; height: Math.max(0, parent.height - y - trashButton.height) }
+              CategoryButton { id: trashButton; label: "Trash"; count: root.notes.filter(function(n) { return n.trashed }).length; selected: root.category === "trash"; onActivated: root.selectCategory("trash") }
+            }
+          }
+
+          BorderSurface {
+            id: listPane
+            width: Math.max(Style.space(300), Math.min(Style.space(360), parent.width * 0.30))
+            height: parent.height
+            color: Util.alpha(Color.foreground, 0.018)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            radius: Style.cornerRadius
+
+            Column {
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(7)
+
+              TextField {
+                id: searchField
+                width: parent.width
+                placeholderText: "Search title or content"
+                placeholderTextColor: Util.alpha(Color.foreground, 0.32)
+                onTextChanged: {
+                  root.searchText = text
+                  Qt.callLater(function() { root.ensureVisibleSelection() })
+                }
+                Keys.onEscapePressed: function(event) { root.handleEscape(); event.accepted = true }
+              }
+
+              ListView {
+                id: noteList
+                width: parent.width
+                height: parent.height - y
+                clip: true
+                spacing: Style.space(3)
+                model: root.visibleNotes
+                section.property: "group"
+                section.criteria: ViewSection.FullString
+                section.delegate: Text {
+                  required property string section
+                  width: noteList.width
+                  height: Style.space(28)
+                  verticalAlignment: Text.AlignVCenter
+                  text: section
+                  color: Util.alpha(Color.foreground, 0.48)
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Up || event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
+                  else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
+                  else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { editor.forceActiveFocus(); event.accepted = true }
+                  else if (event.text === "/") { searchField.forceActiveFocus(); event.accepted = true }
+                }
+
+                delegate: BorderSurface {
+                  id: noteRow
+                  required property var modelData
+                  required property int index
+                  readonly property bool rowSelected: String(modelData.id) === root.selectedId
+                  width: noteList.width
+                  height: Style.space(76)
+                  color: rowSelected
+                    ? Style.selectedFillFor(Color.foreground, Color.accent)
+                    : rowMouse.containsMouse
+                      ? Style.hoverFillFor(Color.foreground, Color.accent)
+                      : "transparent"
+                  borderSpec: rowSelected
+                    ? Border.controlSpec("selected", Color.foreground, Color.accent)
+                    : rowMouse.containsMouse
+                      ? Border.controlSpec("hover-cursor", Color.foreground, Color.accent)
+                      : Border.none
+                  radius: Style.cornerRadius
+
+                  Column {
+                    anchors.fill: parent
+                    anchors.margins: Style.space(8)
+                    spacing: Style.space(3)
+                    Row {
+                      width: parent.width
+                      spacing: Style.space(6)
+                      Text { visible: !!noteRow.modelData.pinned; text: "◆"; color: Color.accent; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                      Text { width: parent.width - x - rowDate.width; text: String(noteRow.modelData.title || "Untitled"); color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: noteRow.rowSelected; elide: Text.ElideRight }
+                      Text { id: rowDate; text: root.relativeTime(noteRow.modelData.modified); color: Util.alpha(Color.foreground, 0.48); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                    }
+                    Text { width: parent.width; text: String(noteRow.modelData.snippet || "No additional text"); color: Util.alpha(Color.foreground, 0.58); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+                    Row {
+                      spacing: Style.space(9)
+                      Text { visible: String(noteRow.modelData.folder || "") !== ""; text: String(noteRow.modelData.folder); color: Util.alpha(Color.foreground, 0.46); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                      Text { visible: Number(noteRow.modelData.openTasks || 0) > 0; text: "☐ " + Number(noteRow.modelData.openTasks); color: Util.alpha(Color.foreground, 0.54); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                    }
+                  }
+                  MouseArea {
+                    id: rowMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { root.selectNote(String(noteRow.modelData.id)); noteList.forceActiveFocus() }
+                    onDoubleClicked: { root.selectNote(String(noteRow.modelData.id)); editor.forceActiveFocus() }
+                  }
+                }
+
+                Text {
+                  visible: root.visibleNotes.length === 0
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(28)
+                  text: root.searchText ? "No notes match this search" : (root.category === "trash" ? "Trash is empty" : "No notes here yet")
+                  horizontalAlignment: Text.AlignHCenter
+                  wrapMode: Text.WordWrap
+                  color: Util.alpha(Color.foreground, 0.46)
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+              }
+            }
+          }
+
+          BorderSurface {
+            id: editorPane
+            width: parent.width - x
+            height: parent.height
+            color: Util.alpha(Color.foreground, 0.024)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            radius: Style.cornerRadius
+
+            Column {
+              anchors.fill: parent
+              anchors.margins: Style.space(12)
+              spacing: Style.space(8)
+
+              Row {
+                width: parent.width
+                height: Style.space(38)
+                spacing: Style.space(7)
+                Column {
+                  width: parent.width - editorActions.width - parent.spacing
+                  anchors.verticalCenter: parent.verticalCenter
+                  Text { width: parent.width; text: root.selectedNote ? String(root.selectedNote.title) : "No note selected"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.title; font.bold: true; elide: Text.ElideRight }
+                  Text { width: parent.width; text: root.selectedNote ? (root.selectedNote.folder ? String(root.selectedNote.folder) : "Inbox") + " · " + root.relativeTime(root.selectedNote.modified) : "Choose a note from the list"; color: Util.alpha(Color.foreground, 0.5); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+                }
+                Row {
+                  id: editorActions
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(5)
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; bordered: true; onClicked: root.togglePin() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; bordered: true; foreground: root.deleteArmed ? Color.urgent : Color.foreground; onClicked: root.requestTrash() }
+                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; bordered: true; onClicked: root.restoreSelected() }
+                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: root.deleteArmed ? "Confirm delete" : "Delete forever"; bordered: true; foreground: root.deleteArmed ? Color.urgent : Color.foreground; onClicked: root.requestPermanentDelete() }
+                }
+              }
+
+              Row {
+                visible: root.selectedNote && !root.selectedNote.trashed
+                width: parent.width
+                height: Style.space(32)
+                spacing: Style.space(7)
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Folder"; color: Util.alpha(Color.foreground, 0.54); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                Dropdown {
+                  width: Style.space(190)
+                  showLabel: false
+                  options: root.folderOptions
+                  value: root.selectedNote ? String(root.selectedNote.folder || "") : ""
+                  onChanged: function(value) { root.moveSelectedTo(value) }
+                }
+                Item { width: Math.max(0, parent.width - x); height: 1 }
+              }
+
+              Rectangle { width: parent.width; height: 1; color: Util.alpha(Color.foreground, 0.13) }
+
+              ScrollView {
+                width: parent.width
+                height: parent.height - y
+                clip: true
+
+                TextArea {
+                  id: editor
+                  width: parent.width
+                  enabled: root.selectedNote !== null && !root.selectedNote.trashed
+                  readOnly: root.selectedNote ? !!root.selectedNote.trashed : true
+                  selectByMouse: true
+                  wrapMode: TextEdit.Wrap
+                  color: enabled || readOnly ? Color.foreground : Util.alpha(Color.foreground, 0.38)
+                  selectionColor: Util.alpha(Color.accent, 0.55)
+                  selectedTextColor: Color.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  leftPadding: Style.space(10)
+                  rightPadding: Style.space(10)
+                  topPadding: Style.space(10)
+                  bottomPadding: Style.space(20)
+                  placeholderText: root.selectedNote ? "Start writing Markdown…" : "Select or create a note"
+                  placeholderTextColor: Util.alpha(Color.foreground, 0.3)
+                  background: Rectangle { color: "transparent" }
+                  onTextChanged: {
+                    if (!root.editorLoading && root.selectedNote && !root.selectedNote.trashed) {
+                      root.editorDirty = true
+                      root.statusText = "Saving…"
+                      saveTimer.restart()
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        Row {
+          id: statusBar
+          width: parent.width
+          height: Style.space(22)
+          spacing: Style.space(8)
+          Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+P Pin"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+        }
+      }
+    }
+  }
+
+  component CategoryButton: BorderSurface {
+    id: categoryButton
+    property string label: ""
+    property int count: -1
+    property bool selected: false
+    signal activated()
+    width: parent ? parent.width : Style.space(160)
+    height: Style.space(34)
+    color: selected
+      ? Style.selectedFillFor(Color.foreground, Color.accent)
+      : categoryMouse.containsMouse
+        ? Style.hoverFillFor(Color.foreground, Color.accent)
+        : "transparent"
+    borderSpec: selected ? Border.controlSpec("selected", Color.foreground, Color.accent) : Border.none
+    radius: Style.cornerRadius
+    Row {
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(9)
+      anchors.rightMargin: Style.space(9)
+      spacing: Style.space(6)
+      Text { width: parent.width - (categoryCount.visible ? categoryCount.width : 0); anchors.verticalCenter: parent.verticalCenter; text: categoryButton.label; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: categoryButton.selected; elide: Text.ElideRight }
+      Text { id: categoryCount; visible: categoryButton.count >= 0; anchors.verticalCenter: parent.verticalCenter; text: String(categoryButton.count); color: Util.alpha(Color.foreground, 0.48); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+    }
+    MouseArea { id: categoryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: categoryButton.activated() }
+  }
+}
