@@ -48,7 +48,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.vertical ? "󰎞" : "󰎞 Notes"
+    text: "󰎞"
     tooltipText: "OmaLeaf Notes"
     onPressed: function(button) {
       if (button === Qt.LeftButton) root.toggleNotes()
