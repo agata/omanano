@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 
@@ -11,6 +10,8 @@ Item {
 
   property var shell: null
   property var hostWidget: null
+  property var bar: null
+  property var anchorItem: null
   property var manifest: null
   property bool opened: false
   property var notes: []
@@ -40,7 +41,6 @@ Item {
 
   function open(_payloadJson) {
     opened = true
-    window.visible = true
     deleteArmed = false
     refreshNotes()
     Qt.callLater(function() { noteList.forceActiveFocus() })
@@ -49,7 +49,6 @@ Item {
   function close() {
     flushSave()
     opened = false
-    window.visible = false
   }
 
   function requestClose() {
@@ -419,47 +418,29 @@ Item {
     }
   }
 
-  PanelWindow {
+  Shortcut { sequence: "Escape"; onActivated: root.handleEscape() }
+  Shortcut { sequence: "Ctrl+N"; onActivated: root.createNote() }
+  Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
+  Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
+  Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
+  Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
+  Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
+
+  KeyboardPanel {
     id: window
-    visible: root.opened
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "omarchy-omaleaf"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    anchorItem: root.anchorItem
+    bar: root.bar
+    owner: root.hostWidget
+    open: root.opened
+    centerOnBar: true
+    focusTarget: noteList
+    padding: Style.space(16)
+    contentWidth: window.fittedContentWidth(Style.space(1240))
+    contentHeight: window.cappedContentHeight(Style.space(780))
 
-    Rectangle {
+    Column {
       anchors.fill: parent
-      color: "transparent"
-      MouseArea { anchors.fill: parent; onClicked: root.requestClose() }
-    }
-
-    Shortcut { sequence: "Escape"; onActivated: root.handleEscape() }
-    Shortcut { sequence: "Ctrl+N"; onActivated: root.createNote() }
-    Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
-    Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
-    Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
-    Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
-    Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
-
-    BorderSurface {
-      id: card
-      anchors.top: parent.top
-      anchors.topMargin: Style.space(48)
-      anchors.horizontalCenter: parent.horizontalCenter
-      width: Math.min(parent.width - Style.space(28), Style.space(1240))
-      height: Math.min(parent.height - Style.space(70), Style.space(780))
-      color: Color.popups.background
-      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
-      radius: Style.cornerRadius
-
-      MouseArea { anchors.fill: parent; onClicked: {} }
-
-      Column {
-        anchors.fill: parent
-        anchors.margins: Style.space(16)
-        spacing: Style.space(10)
+      spacing: Style.space(10)
 
         Row {
           width: parent.width
@@ -789,7 +770,6 @@ Item {
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
           Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Tile  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
-      }
     }
   }
 

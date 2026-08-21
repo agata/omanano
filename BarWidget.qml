@@ -12,6 +12,8 @@ BarWidget {
     if (!target) return
     if ("shell" in target) target.shell = root.bar ? root.bar.shell : null
     if ("hostWidget" in target) target.hostWidget = root
+    if ("bar" in target) target.bar = root.bar
+    if ("anchorItem" in target) target.anchorItem = button
   }
 
   function open() {
