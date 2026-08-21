@@ -25,6 +25,9 @@ Item {
   property bool deleteArmed: false
   property string pendingAction: ""
   property string pendingSelectId: ""
+  property string detachedId: ""
+  property bool detachedLoading: false
+  property bool detachedDirty: false
 
   readonly property string pluginId: "io.github.agata.omaleaf"
   readonly property string home: Quickshell.env("HOME")
@@ -34,6 +37,7 @@ Item {
     : home + "/.config/omarchy/plugins/" + pluginId
   readonly property string storePath: pluginDir + "/scripts/omaleaf-store"
   readonly property var selectedNote: findNote(selectedId)
+  readonly property var detachedNote: findNote(detachedId)
   readonly property var visibleNotes: filteredNotes()
   readonly property var folderOptions: buildFolderOptions()
 
@@ -212,12 +216,12 @@ Item {
     noteList.positionViewAtIndex(index, ListView.Contain)
   }
 
-  function updateSelectedInMemory(content) {
-    if (!selectedNote) return
+  function updateNoteInMemory(id, content) {
+    if (!findNote(id)) return
     var next = []
     for (var i = 0; i < notes.length; i++) {
       var item = notes[i]
-      if (String(item.id) === selectedId) {
+      if (String(item.id) === String(id)) {
         var copy = {}
         for (var key in item) copy[key] = item[key]
         copy.content = String(content)
@@ -236,10 +240,32 @@ Item {
     saveTimer.stop()
     suppressFileChange = true
     noteFile.setText(editor.text)
-    updateSelectedInMemory(editor.text)
+    updateNoteInMemory(selectedId, editor.text)
     editorDirty = false
     statusText = "Saved"
     suppressTimer.restart()
+  }
+
+  function openSelectedInWindow() {
+    if (!selectedNote || selectedNote.trashed) return
+    flushSave()
+    detachedId = selectedId
+    detachedLoading = true
+    detachedEditor.text = String(selectedNote.content || "")
+    detachedEditor.cursorPosition = 0
+    detachedDirty = false
+    detachedLoading = false
+    detachedWindow.visible = true
+    Qt.callLater(function() { detachedEditor.forceActiveFocus() })
+    requestClose()
+  }
+
+  function flushDetachedSave() {
+    if (detachedLoading || !detachedDirty || !detachedNote || detachedNote.trashed) return
+    detachedSaveTimer.stop()
+    detachedFile.setText(detachedEditor.text)
+    updateNoteInMemory(detachedId, detachedEditor.text)
+    detachedDirty = false
   }
 
   function refreshNotes() {
@@ -317,6 +343,7 @@ Item {
   Timer { id: saveTimer; interval: 420; onTriggered: root.flushSave() }
   Timer { id: suppressTimer; interval: 800; onTriggered: root.suppressFileChange = false }
   Timer { id: deleteTimer; interval: 3200; onTriggered: root.deleteArmed = false }
+  Timer { id: detachedSaveTimer; interval: 420; onTriggered: root.flushDetachedSave() }
   Timer { id: pollTimer; interval: 4000; repeat: true; running: root.opened; onTriggered: if (!editor.activeFocus && !saveTimer.running) root.refreshNotes() }
 
   FileView {
@@ -331,6 +358,16 @@ Item {
       if (root.suppressFileChange) root.suppressFileChange = false
       else if (!editor.activeFocus && !saveTimer.running) root.refreshNotes()
     }
+  }
+
+  FileView {
+    id: detachedFile
+    path: root.detachedNote && !root.detachedNote.trashed
+      ? root.dataRoot + "/notes/" + String(root.detachedNote.id)
+      : ""
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
   }
 
   Process {
@@ -586,16 +623,25 @@ Item {
                   width: noteList.width
                   height: Style.space(76)
                   color: rowSelected
-                    ? Style.selectedFillFor(Color.foreground, Color.accent)
+                    ? Style.selectedAccentFill
                     : rowMouse.containsMouse
                       ? Style.hoverFillFor(Color.foreground, Color.accent)
                       : "transparent"
                   borderSpec: rowSelected
-                    ? Border.controlSpec("selected", Color.foreground, Color.accent)
+                    ? Border.controlSpec("selected", Color.accent, Color.accent)
                     : rowMouse.containsMouse
                       ? Border.controlSpec("hover-cursor", Color.foreground, Color.accent)
                       : Border.none
                   radius: Style.cornerRadius
+
+                  Rectangle {
+                    visible: noteRow.rowSelected
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: Style.space(3)
+                    color: Color.accent
+                  }
 
                   Column {
                     anchors.fill: parent
@@ -625,11 +671,27 @@ Item {
                   }
                 }
 
-                Text {
-                  visible: root.visibleNotes.length === 0
+                Column {
+                  visible: root.visibleNotes.length === 0 && !root.searchText && root.category !== "trash"
                   anchors.centerIn: parent
                   width: parent.width - Style.space(28)
-                  text: root.searchText ? "No notes match this search" : (root.category === "trash" ? "Trash is empty" : "No notes here yet")
+                  spacing: Style.space(10)
+                  Text {
+                    width: parent.width
+                    text: "No notes here yet"
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Util.alpha(Color.foreground, 0.5)
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                  }
+                  Button { anchors.horizontalCenter: parent.horizontalCenter; text: "Create a note"; iconText: "+"; active: true; onClicked: root.createNote() }
+                }
+
+                Text {
+                  visible: root.visibleNotes.length === 0 && (root.searchText || root.category === "trash")
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(28)
+                  text: root.searchText ? "No notes match this search" : "Trash is empty"
                   horizontalAlignment: Text.AlignHCenter
                   wrapMode: Text.WordWrap
                   color: Util.alpha(Color.foreground, 0.46)
@@ -667,6 +729,7 @@ Item {
                   id: editorActions
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(5)
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open in window"; bordered: true; tooltipText: "Open this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; bordered: true; onClicked: root.togglePin() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; bordered: true; foreground: root.deleteArmed ? Color.urgent : Color.foreground; onClicked: root.requestTrash() }
                   Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; bordered: true; onClicked: root.restoreSelected() }
@@ -741,6 +804,97 @@ Item {
     }
   }
 
+  FloatingWindow {
+    id: detachedWindow
+    visible: false
+    title: root.detachedNote ? "OmaLeaf — " + String(root.detachedNote.title) : "OmaLeaf Notes"
+    color: Color.popups.background
+    implicitWidth: Style.space(760)
+    implicitHeight: Style.space(720)
+    minimumSize: Qt.size(Style.space(480), Style.space(360))
+
+    onVisibleChanged: {
+      if (!visible) root.flushDetachedSave()
+    }
+
+    Shortcut { sequence: "Ctrl+S"; onActivated: root.flushDetachedSave() }
+
+    Column {
+      anchors.fill: parent
+      anchors.margins: Style.space(18)
+      spacing: Style.space(10)
+
+      Row {
+        width: parent.width
+        height: Style.space(46)
+        spacing: Style.space(10)
+        Column {
+          width: parent.width - tiledStatus.width - parent.spacing
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: root.detachedNote ? String(root.detachedNote.title) : "Note"
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+            font.bold: true
+            elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            text: root.detachedNote ? (root.detachedNote.folder ? String(root.detachedNote.folder) : "Inbox") + " · normal tiled window" : ""
+            color: Util.alpha(Color.foreground, 0.5)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
+          }
+        }
+        Text {
+          id: tiledStatus
+          anchors.verticalCenter: parent.verticalCenter
+          text: detachedSaveTimer.running ? "Saving…" : "Saved"
+          color: detachedSaveTimer.running ? Color.accent : Util.alpha(Color.foreground, 0.5)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
+      Rectangle { width: parent.width; height: 1; color: Util.alpha(Color.foreground, 0.16) }
+
+      ScrollView {
+        width: parent.width
+        height: parent.height - y
+        clip: true
+
+        TextArea {
+          id: detachedEditor
+          width: parent.width
+          selectByMouse: true
+          wrapMode: TextEdit.Wrap
+          color: Color.foreground
+          selectionColor: Util.alpha(Color.accent, 0.55)
+          selectedTextColor: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          leftPadding: Style.space(10)
+          rightPadding: Style.space(10)
+          topPadding: Style.space(10)
+          bottomPadding: Style.space(20)
+          placeholderText: "Start writing Markdown…"
+          placeholderTextColor: Util.alpha(Color.foreground, 0.3)
+          background: Rectangle { color: "transparent" }
+          onTextChanged: {
+            if (!root.detachedLoading && root.detachedNote) {
+              root.detachedDirty = true
+              detachedSaveTimer.restart()
+            }
+          }
+        }
+      }
+    }
+  }
+
   component CategoryButton: BorderSurface {
     id: categoryButton
     property string label: ""
@@ -750,12 +904,20 @@ Item {
     width: parent ? parent.width : Style.space(160)
     height: Style.space(34)
     color: selected
-      ? Style.selectedFillFor(Color.foreground, Color.accent)
+      ? Style.selectedAccentFill
       : categoryMouse.containsMouse
         ? Style.hoverFillFor(Color.foreground, Color.accent)
         : "transparent"
-    borderSpec: selected ? Border.controlSpec("selected", Color.foreground, Color.accent) : Border.none
+    borderSpec: selected ? Border.controlSpec("selected", Color.accent, Color.accent) : Border.none
     radius: Style.cornerRadius
+    Rectangle {
+      visible: categoryButton.selected
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: Style.space(3)
+      color: Color.accent
+    }
     Row {
       anchors.fill: parent
       anchors.leftMargin: Style.space(9)

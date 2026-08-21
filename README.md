@@ -11,6 +11,7 @@ OmaLeaf is a local-first Markdown notes library for Omarchy. Its MVP focuses on 
 - Debounced atomic autosave
 - Keyboard and mouse navigation
 - Omarchy theme-aware floating panel and optional bar widget
+- Open the selected note as a normal Hyprland tiled window
 - Plain Markdown files under `~/.local/share/omaleaf/notes/`
 
 ## Install from this checkout
@@ -35,6 +36,8 @@ The plugin keeps notes outside its installation directory. Removing or reinstall
 | `Up` / `Down` | Select previous/next note while the list has focus |
 | `Enter` | Focus the editor |
 | `Escape` | Clear search, then close |
+
+Use **Open in window** on a selected note when you want Hyprland to tile the editor beside another application. The library remains a quick floating panel; the detached editor is a regular XDG window.
 
 ## Development data directory
 
