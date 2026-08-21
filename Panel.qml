@@ -10,6 +10,7 @@ Item {
   id: root
 
   property var shell: null
+  property var hostWidget: null
   property var manifest: null
   property bool opened: false
   property var notes: []
@@ -25,9 +26,6 @@ Item {
   property bool deleteArmed: false
   property string pendingAction: ""
   property string pendingSelectId: ""
-  property string detachedId: ""
-  property bool detachedLoading: false
-  property bool detachedDirty: false
 
   readonly property string pluginId: "io.github.agata.omaleaf"
   readonly property string home: Quickshell.env("HOME")
@@ -37,7 +35,6 @@ Item {
     : home + "/.config/omarchy/plugins/" + pluginId
   readonly property string storePath: pluginDir + "/scripts/omaleaf-store"
   readonly property var selectedNote: findNote(selectedId)
-  readonly property var detachedNote: findNote(detachedId)
   readonly property var visibleNotes: filteredNotes()
   readonly property var folderOptions: buildFolderOptions()
 
@@ -56,7 +53,8 @@ Item {
   }
 
   function requestClose() {
-    if (shell && typeof shell.hide === "function") shell.hide(pluginId)
+    if (hostWidget && typeof hostWidget.close === "function") hostWidget.close()
+    else if (shell && typeof shell.hide === "function") shell.hide(pluginId)
     else close()
   }
 
@@ -249,23 +247,16 @@ Item {
   function openSelectedInWindow() {
     if (!selectedNote || selectedNote.trashed) return
     flushSave()
-    detachedId = selectedId
-    detachedLoading = true
-    detachedEditor.text = String(selectedNote.content || "")
-    detachedEditor.cursorPosition = 0
-    detachedDirty = false
-    detachedLoading = false
-    detachedWindow.visible = true
-    Qt.callLater(function() { detachedEditor.forceActiveFocus() })
-    requestClose()
-  }
-
-  function flushDetachedSave() {
-    if (detachedLoading || !detachedDirty || !detachedNote || detachedNote.trashed) return
-    detachedSaveTimer.stop()
-    detachedFile.setText(detachedEditor.text)
-    updateNoteInMemory(detachedId, detachedEditor.text)
-    detachedDirty = false
+    detachedLaunchProcess.command = [
+      pluginDir + "/scripts/omaleaf-window",
+      dataRoot + "/notes/" + String(selectedNote.id),
+      String(selectedNote.title),
+      String(Color.popups.background),
+      String(Color.foreground),
+      String(Color.accent)
+    ]
+    detachedLaunchProcess.running = true
+    detachOverlayCloseTimer.restart()
   }
 
   function refreshNotes() {
@@ -343,7 +334,7 @@ Item {
   Timer { id: saveTimer; interval: 420; onTriggered: root.flushSave() }
   Timer { id: suppressTimer; interval: 800; onTriggered: root.suppressFileChange = false }
   Timer { id: deleteTimer; interval: 3200; onTriggered: root.deleteArmed = false }
-  Timer { id: detachedSaveTimer; interval: 420; onTriggered: root.flushDetachedSave() }
+  Timer { id: detachOverlayCloseTimer; interval: 180; onTriggered: root.requestClose() }
   Timer { id: pollTimer; interval: 4000; repeat: true; running: root.opened; onTriggered: if (!editor.activeFocus && !saveTimer.running) root.refreshNotes() }
 
   FileView {
@@ -358,16 +349,6 @@ Item {
       if (root.suppressFileChange) root.suppressFileChange = false
       else if (!editor.activeFocus && !saveTimer.running) root.refreshNotes()
     }
-  }
-
-  FileView {
-    id: detachedFile
-    path: root.detachedNote && !root.detachedNote.trashed
-      ? root.dataRoot + "/notes/" + String(root.detachedNote.id)
-      : ""
-    watchChanges: true
-    atomicWrites: true
-    printErrors: false
   }
 
   Process {
@@ -405,6 +386,8 @@ Item {
       }
     }
   }
+
+  Process { id: detachedLaunchProcess }
 
   Process {
     id: actionProcess
@@ -457,6 +440,7 @@ Item {
     Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
     Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
     Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
+    Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
     Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
 
     BorderSurface {
@@ -798,98 +782,7 @@ Item {
           height: Style.space(22)
           spacing: Style.space(8)
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
-          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+P Pin"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
-        }
-      }
-    }
-  }
-
-  FloatingWindow {
-    id: detachedWindow
-    visible: false
-    title: root.detachedNote ? "OmaLeaf — " + String(root.detachedNote.title) : "OmaLeaf Notes"
-    color: Color.popups.background
-    implicitWidth: Style.space(760)
-    implicitHeight: Style.space(720)
-    minimumSize: Qt.size(Style.space(480), Style.space(360))
-
-    onVisibleChanged: {
-      if (!visible) root.flushDetachedSave()
-    }
-
-    Shortcut { sequence: "Ctrl+S"; onActivated: root.flushDetachedSave() }
-
-    Column {
-      anchors.fill: parent
-      anchors.margins: Style.space(18)
-      spacing: Style.space(10)
-
-      Row {
-        width: parent.width
-        height: Style.space(46)
-        spacing: Style.space(10)
-        Column {
-          width: parent.width - tiledStatus.width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(2)
-          Text {
-            width: parent.width
-            text: root.detachedNote ? String(root.detachedNote.title) : "Note"
-            color: Color.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.title
-            font.bold: true
-            elide: Text.ElideRight
-          }
-          Text {
-            width: parent.width
-            text: root.detachedNote ? (root.detachedNote.folder ? String(root.detachedNote.folder) : "Inbox") + " · normal tiled window" : ""
-            color: Util.alpha(Color.foreground, 0.5)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            elide: Text.ElideRight
-          }
-        }
-        Text {
-          id: tiledStatus
-          anchors.verticalCenter: parent.verticalCenter
-          text: detachedSaveTimer.running ? "Saving…" : "Saved"
-          color: detachedSaveTimer.running ? Color.accent : Util.alpha(Color.foreground, 0.5)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-        }
-      }
-
-      Rectangle { width: parent.width; height: 1; color: Util.alpha(Color.foreground, 0.16) }
-
-      ScrollView {
-        width: parent.width
-        height: parent.height - y
-        clip: true
-
-        TextArea {
-          id: detachedEditor
-          width: parent.width
-          selectByMouse: true
-          wrapMode: TextEdit.Wrap
-          color: Color.foreground
-          selectionColor: Util.alpha(Color.accent, 0.55)
-          selectedTextColor: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          leftPadding: Style.space(10)
-          rightPadding: Style.space(10)
-          topPadding: Style.space(10)
-          bottomPadding: Style.space(20)
-          placeholderText: "Start writing Markdown…"
-          placeholderTextColor: Util.alpha(Color.foreground, 0.3)
-          background: Rectangle { color: "transparent" }
-          onTextChanged: {
-            if (!root.detachedLoading && root.detachedNote) {
-              root.detachedDirty = true
-              detachedSaveTimer.restart()
-            }
-          }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Tile"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
       }
     }

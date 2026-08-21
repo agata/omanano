@@ -6,11 +6,13 @@ OmaLeaf is a local-first Markdown notes library for Omarchy. Its MVP focuses on 
 
 - Three-pane categories, note list, and Markdown editor
 - Preview rows grouped by recency
+- Empty-list call to action for creating the first note
 - Full-text, incremental search
 - Pinning, folders, Trash, and restore
 - Debounced atomic autosave
 - Keyboard and mouse navigation
 - Omarchy theme-aware floating panel and optional bar widget
+- Accent-aware selected categories and note rows
 - Open the selected note as a normal Hyprland tiled window
 - Plain Markdown files under `~/.local/share/omaleaf/notes/`
 
@@ -32,6 +34,7 @@ The plugin keeps notes outside its installation directory. Removing or reinstall
 | `Ctrl+F` or `/` | Search notes |
 | `Ctrl+P` | Pin/unpin selected note |
 | `Ctrl+S` | Save now |
+| `Ctrl+Enter` | Open the selected note in a normal tiled window |
 | `Ctrl+Delete` | Move selected note to Trash |
 | `Up` / `Down` | Select previous/next note while the list has focus |
 | `Enter` | Focus the editor |

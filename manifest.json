@@ -6,12 +6,9 @@
   "author": "Agata",
   "description": "A calm, local-first Markdown notes library for Omarchy.",
   "kinds": [
-    "panel",
     "bar-widget"
   ],
-  "keepLoaded": true,
   "entryPoints": {
-    "panel": "Panel.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {

@@ -5,15 +5,44 @@ BarWidget {
   id: root
   moduleName: "io.github.agata.omaleaf"
 
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("shell" in target) target.shell = root.bar ? root.bar.shell : null
+    if ("hostWidget" in target) target.hostWidget = root
+  }
+
+  function open() {
+    if (panelLoader.item) panelLoader.item.open("")
+  }
+
+  function close() {
+    if (panelLoader.item) panelLoader.item.close()
+  }
+
   function toggleNotes() {
-    if (root.bar && root.bar.shell && typeof root.bar.shell.toggle === "function")
-      root.bar.shell.toggle(root.moduleName, "{}")
-    else if (root.bar)
-      root.bar.run("omarchy-shell shell toggle " + root.moduleName + " '{}'")
+    if (!panelLoader.item) return
+    if (opened) close()
+    else open()
   }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+
+  onBarChanged: injectPanel()
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
+  }
 
   WidgetButton {
     id: button
