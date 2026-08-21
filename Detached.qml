@@ -6,11 +6,11 @@ import Quickshell.Io
 ShellRoot {
   id: root
 
-  readonly property string notePath: Quickshell.env("OMALEAF_NOTE_PATH")
-  readonly property string noteTitle: Quickshell.env("OMALEAF_NOTE_TITLE") || "Note"
-  readonly property color backgroundColor: Quickshell.env("OMALEAF_BACKGROUND") || "#202020"
-  readonly property color foregroundColor: Quickshell.env("OMALEAF_FOREGROUND") || "#f2f2f2"
-  readonly property color accentColor: Quickshell.env("OMALEAF_ACCENT") || "#7aa2f7"
+  readonly property string notePath: Quickshell.env("OMANANO_NOTE_PATH")
+  readonly property string noteTitle: Quickshell.env("OMANANO_NOTE_TITLE") || "Note"
+  readonly property color backgroundColor: Quickshell.env("OMANANO_BACKGROUND") || "#202020"
+  readonly property color foregroundColor: Quickshell.env("OMANANO_FOREGROUND") || "#f2f2f2"
+  readonly property color accentColor: Quickshell.env("OMANANO_ACCENT") || "#7aa2f7"
   property bool loading: true
   property bool dirty: false
 
@@ -45,7 +45,7 @@ ShellRoot {
   FloatingWindow {
     id: window
     visible: true
-    title: "OmaLeaf — " + root.noteTitle
+    title: "OmaNano — " + root.noteTitle
     color: root.backgroundColor
     implicitWidth: 760
     implicitHeight: 720

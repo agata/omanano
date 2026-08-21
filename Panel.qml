@@ -29,13 +29,13 @@ Item {
   property string pendingAction: ""
   property string pendingSelectId: ""
 
-  readonly property string pluginId: "io.github.agata.omaleaf"
+  readonly property string pluginId: "io.github.agata.omanano"
   readonly property string home: Quickshell.env("HOME")
-  readonly property string dataRoot: home + "/.local/share/omaleaf"
+  readonly property string dataRoot: home + "/.local/share/omanano"
   readonly property string pluginDir: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir)
     : home + "/.config/omarchy/plugins/" + pluginId
-  readonly property string storePath: pluginDir + "/scripts/omaleaf-store"
+  readonly property string storePath: pluginDir + "/scripts/omanano-store"
   readonly property var selectedNote: findNote(selectedId)
   readonly property var visibleNotes: filteredNotes()
   readonly property var folderOptions: buildFolderOptions()
@@ -268,11 +268,11 @@ Item {
     suppressTimer.restart()
   }
 
-  function openSelectedInWindow() {
+  function detachSelectedNote() {
     if (!selectedNote || selectedNote.trashed) return
     flushSave()
     detachedLaunchProcess.command = [
-      pluginDir + "/scripts/omaleaf-window",
+      pluginDir + "/scripts/omanano-window",
       dataRoot + "/notes/" + String(selectedNote.id),
       String(selectedNote.title),
       String(Color.popups.background),
@@ -280,7 +280,7 @@ Item {
       String(Color.accent)
     ]
     detachedLaunchProcess.running = true
-    detachOverlayCloseTimer.restart()
+    if (opened) detachOverlayCloseTimer.restart()
   }
 
   function refreshNotes() {
@@ -461,7 +461,7 @@ Item {
   FloatingWindow {
     id: appWindow
     visible: root.appWindowOpened
-    title: "OmaLeaf Notes"
+    title: "OmaNano Notes"
     color: Color.popups.background
     implicitWidth: Style.space(1240)
     implicitHeight: Style.space(780)
@@ -486,7 +486,7 @@ Item {
     Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
     Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
     Shortcut { sequence: "Ctrl+Shift+Return"; onActivated: root.openLibraryInWindow() }
-    Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
+    Shortcut { sequence: "Ctrl+Return"; onActivated: root.detachSelectedNote() }
     Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
 
     Column {
@@ -503,7 +503,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
             Text {
-              text: "OMALEAF  /  " + root.categoryLabel().toUpperCase()
+              text: "OMANANO  /  " + root.categoryLabel().toUpperCase()
               color: Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.title
@@ -523,7 +523,7 @@ Item {
             Button {
               visible: !root.appWindowOpened
               text: "Open in window"
-              tooltipText: "Open the complete OmaLeaf library as a normal tiled window"
+              tooltipText: "Open the complete OmaNano library as a normal tiled window"
               onClicked: root.openLibraryInWindow()
             }
             Button { id: newButton; text: "New note"; iconText: "+"; active: true; onClicked: root.createNote() }
@@ -756,7 +756,7 @@ Item {
                   id: editorActions
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(5)
-                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open note"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); tooltipText: "Open only this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Detach note"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); tooltipText: "Detach this note into a separate tiled window"; onClicked: root.detachSelectedNote() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; foreground: Util.alpha(Color.foreground, 0.58); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.togglePin() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; foreground: root.deleteArmed ? Color.urgent : Util.alpha(Color.foreground, 0.52); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.requestTrash() }
                   Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.restoreSelected() }
@@ -830,7 +830,7 @@ Item {
           height: Style.space(22)
           spacing: Style.space(8)
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
-          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Note  ·  Ctrl+Shift+Enter App  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Detach  ·  Ctrl+Shift+Enter App  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
     }
   }

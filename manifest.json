@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.agata.omaleaf",
-  "name": "OmaLeaf Notes",
+  "id": "io.github.agata.omanano",
+  "name": "OmaNano Notes",
   "version": "0.1.0",
   "author": "Agata",
-  "description": "A calm, local-first Markdown notes library for Omarchy.",
+  "description": "A local-first Markdown notes library for Omarchy.",
   "kinds": [
     "bar-widget"
   ],
@@ -12,7 +12,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "OmaLeaf Notes",
+    "displayName": "OmaNano Notes",
     "description": "Browse and edit local Markdown notes",
     "category": "Productivity",
     "allowMultiple": false,

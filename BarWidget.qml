@@ -3,7 +3,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "io.github.agata.omaleaf"
+  moduleName: "io.github.agata.omanano"
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
@@ -51,7 +51,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰎞"
-    tooltipText: "OmaLeaf Notes"
+    tooltipText: "OmaNano Notes"
     onPressed: function(button) {
       if (button === Qt.LeftButton) root.toggleNotes()
     }

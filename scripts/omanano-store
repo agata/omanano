@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small filesystem backend for the OmaLeaf Quickshell UI."""
+"""Small filesystem backend for the OmaNano Quickshell UI."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 
 
-DATA_ROOT = Path(os.environ.get("OMALEAF_DATA_DIR", "~/.local/share/omaleaf")).expanduser()
+DATA_ROOT = Path(os.environ.get("OMANANO_DATA_DIR", "~/.local/share/omanano")).expanduser()
 NOTES_ROOT = DATA_ROOT / "notes"
 TRASH_ROOT = DATA_ROOT / "trash"
 STATE_PATH = DATA_ROOT / "state.json"

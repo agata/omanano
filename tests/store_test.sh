@@ -2,16 +2,16 @@
 set -euo pipefail
 
 project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-test_dir=$(mktemp -d /tmp/omaleaf-store-test-XXXXXX)
+test_dir=$(mktemp -d /tmp/omanano-store-test-XXXXXX)
 trap 'rm -rf "$test_dir"' EXIT
 
-store="$project_dir/scripts/omaleaf-store"
-export OMALEAF_DATA_DIR="$test_dir/data"
+store="$project_dir/scripts/omanano-store"
+export OMANANO_DATA_DIR="$test_dir/data"
 
 first=$($store create --folder Work | jq -r .id)
 [[ $first == Work/*.md ]]
 
-printf '# Release notes\n\n- [ ] Capture screenshots\n- [x] Run tests\n' > "$OMALEAF_DATA_DIR/notes/$first"
+printf '# Release notes\n\n- [ ] Capture screenshots\n- [x] Run tests\n' > "$OMANANO_DATA_DIR/notes/$first"
 
 $store create-folder Personal >/dev/null
 listing=$($store list)
@@ -25,15 +25,15 @@ $store pin "$first" >/dev/null
 
 moved=$($store move "$first" --folder Personal | jq -r .id)
 [[ $moved == Personal/*.md ]]
-[[ -f "$OMALEAF_DATA_DIR/notes/$moved" ]]
+[[ -f "$OMANANO_DATA_DIR/notes/$moved" ]]
 [[ $($store list | jq -r '.notes[0].pinned') == true ]]
 
 trashed=$($store trash "$moved" | jq -r .id)
-[[ -f "$OMALEAF_DATA_DIR/trash/$trashed" ]]
+[[ -f "$OMANANO_DATA_DIR/trash/$trashed" ]]
 [[ $($store list | jq -r '.notes[0].trashed') == true ]]
 
 restored=$($store restore "$trashed" | jq -r .id)
-[[ -f "$OMALEAF_DATA_DIR/notes/$restored" ]]
+[[ -f "$OMANANO_DATA_DIR/notes/$restored" ]]
 
 $store trash "$restored" >/dev/null
 $store delete "$restored" >/dev/null
@@ -44,4 +44,4 @@ if $store create --folder ../escape >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "OmaLeaf store tests passed"
+echo "OmaNano store tests passed"

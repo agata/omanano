@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+OMANANO_NOTE_PATH=$1
+OMANANO_NOTE_TITLE=$2
+OMANANO_BACKGROUND=$3
+OMANANO_FOREGROUND=$4
+OMANANO_ACCENT=$5
+export OMANANO_NOTE_PATH OMANANO_NOTE_TITLE OMANANO_BACKGROUND OMANANO_FOREGROUND OMANANO_ACCENT
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec quickshell -d -p "$script_dir/../Detached.qml"
