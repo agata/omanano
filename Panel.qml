@@ -713,23 +713,30 @@ Item {
                   id: editorActions
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(5)
-                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open in window"; bordered: true; tooltipText: "Open this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
-                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; bordered: true; onClicked: root.togglePin() }
-                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; bordered: true; foreground: root.deleteArmed ? Color.urgent : Color.foreground; onClicked: root.requestTrash() }
-                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; bordered: true; onClicked: root.restoreSelected() }
-                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: root.deleteArmed ? "Confirm delete" : "Delete forever"; bordered: true; foreground: root.deleteArmed ? Color.urgent : Color.foreground; onClicked: root.requestPermanentDelete() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open in window"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); tooltipText: "Open this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; foreground: Util.alpha(Color.foreground, 0.58); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.togglePin() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; foreground: root.deleteArmed ? Color.urgent : Util.alpha(Color.foreground, 0.52); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.requestTrash() }
+                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.restoreSelected() }
+                  Button { visible: root.selectedNote && root.selectedNote.trashed; text: root.deleteArmed ? "Confirm delete" : "Delete forever"; foreground: root.deleteArmed ? Color.urgent : Util.alpha(Color.foreground, 0.52); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.requestPermanentDelete() }
                 }
               }
 
               Row {
                 visible: root.selectedNote && !root.selectedNote.trashed
                 width: parent.width
-                height: Style.space(32)
+                height: Style.space(28)
                 spacing: Style.space(7)
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Folder"; color: Util.alpha(Color.foreground, 0.54); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Folder"; color: Util.alpha(Color.foreground, 0.4); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
                 Dropdown {
-                  width: Style.space(190)
+                  property bool pointerInside: false
+                  width: Style.space(150)
+                  rowHeight: Style.space(28)
                   showLabel: false
+                  foreground: Util.alpha(Color.foreground, 0.62)
+                  background: "transparent"
+                  opacity: popupOpen || pointerInside ? 1 : 0.62
+                  Behavior on opacity { NumberAnimation { duration: 120 } }
+                  onHovered: function(hovered) { pointerInside = hovered }
                   options: root.folderOptions
                   value: root.selectedNote ? String(root.selectedNote.folder || "") : ""
                   onChanged: function(value) { root.moveSelectedTo(value) }
@@ -744,16 +751,15 @@ Item {
                 height: parent.height - y
                 clip: true
 
-                TextArea {
+                MarkdownEditor {
                   id: editor
                   width: parent.width
                   enabled: root.selectedNote !== null && !root.selectedNote.trashed
                   readOnly: root.selectedNote ? !!root.selectedNote.trashed : true
                   selectByMouse: true
                   wrapMode: TextEdit.Wrap
-                  color: enabled || readOnly ? Color.foreground : Util.alpha(Color.foreground, 0.38)
-                  selectionColor: Util.alpha(Color.accent, 0.55)
-                  selectedTextColor: Color.foreground
+                  foregroundColor: enabled || readOnly ? Color.foreground : Util.alpha(Color.foreground, 0.38)
+                  accentColor: Color.accent
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
                   leftPadding: Style.space(10)
@@ -762,7 +768,6 @@ Item {
                   bottomPadding: Style.space(20)
                   placeholderText: root.selectedNote ? "Start writing Markdown…" : "Select or create a note"
                   placeholderTextColor: Util.alpha(Color.foreground, 0.3)
-                  background: Rectangle { color: "transparent" }
                   onTextChanged: {
                     if (!root.editorLoading && root.selectedNote && !root.selectedNote.trashed) {
                       root.editorDirty = true
@@ -782,7 +787,7 @@ Item {
           height: Style.space(22)
           spacing: Style.space(8)
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
-          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Tile"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Tile  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
       }
     }

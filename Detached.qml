@@ -69,7 +69,7 @@ ShellRoot {
           anchors.verticalCenter: parent.verticalCenter
           spacing: 3
           Text { width: parent.width; text: root.noteTitle; color: root.foregroundColor; font.pixelSize: 20; font.bold: true; elide: Text.ElideRight }
-          Text { width: parent.width; text: "Markdown note · normal tiled window"; color: root.alpha(root.foregroundColor, 0.55); font.pixelSize: 13; elide: Text.ElideRight }
+          Text { width: parent.width; text: "Markdown note · Ctrl+click links"; color: root.alpha(root.foregroundColor, 0.55); font.pixelSize: 13; elide: Text.ElideRight }
         }
         Text { id: status; anchors.verticalCenter: parent.verticalCenter; text: saveTimer.running ? "Saving…" : "Saved"; color: saveTimer.running ? root.accentColor : root.alpha(root.foregroundColor, 0.55); font.pixelSize: 13 }
       }
@@ -81,14 +81,13 @@ ShellRoot {
         height: parent.height - y
         clip: true
 
-        TextArea {
+        MarkdownEditor {
           id: editor
           width: parent.width
           selectByMouse: true
           wrapMode: TextEdit.Wrap
-          color: root.foregroundColor
-          selectionColor: root.alpha(root.accentColor, 0.58)
-          selectedTextColor: root.foregroundColor
+          foregroundColor: root.foregroundColor
+          accentColor: root.accentColor
           font.family: "monospace"
           font.pixelSize: 16
           leftPadding: 10
@@ -97,7 +96,6 @@ ShellRoot {
           bottomPadding: 24
           placeholderText: "Start writing Markdown…"
           placeholderTextColor: root.alpha(root.foregroundColor, 0.32)
-          background: Rectangle { color: "transparent" }
           onTextChanged: {
             if (!root.loading) {
               root.dirty = true
