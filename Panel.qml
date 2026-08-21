@@ -29,7 +29,9 @@ Item {
   readonly property string pluginId: "io.github.agata.omaleaf"
   readonly property string home: Quickshell.env("HOME")
   readonly property string dataRoot: home + "/.local/share/omaleaf"
-  readonly property string pluginDir: manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : dataRoot
+  readonly property string pluginDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir)
+    : home + "/.config/omarchy/plugins/" + pluginId
   readonly property string storePath: pluginDir + "/scripts/omaleaf-store"
   readonly property var selectedNote: findNote(selectedId)
   readonly property var visibleNotes: filteredNotes()
