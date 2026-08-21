@@ -14,6 +14,7 @@ Item {
   property var anchorItem: null
   property var manifest: null
   property bool opened: false
+  property bool appWindowOpened: false
   property var notes: []
   property var folders: []
   property string selectedId: ""
@@ -40,6 +41,10 @@ Item {
   readonly property var folderOptions: buildFolderOptions()
 
   function open(_payloadJson) {
+    if (appWindowOpened) {
+      appWindow.minimized = false
+      return
+    }
     opened = true
     deleteArmed = false
     refreshNotes()
@@ -51,7 +56,27 @@ Item {
     opened = false
   }
 
+  function openLibraryInWindow() {
+    flushSave()
+    opened = false
+    appWindowOpened = true
+    deleteArmed = false
+    refreshNotes()
+    Qt.callLater(function() {
+      noteList.forceActiveFocus()
+    })
+  }
+
+  function closeLibraryWindow() {
+    flushSave()
+    appWindowOpened = false
+  }
+
   function requestClose() {
+    if (appWindowOpened) {
+      closeLibraryWindow()
+      return
+    }
     if (hostWidget && typeof hostWidget.close === "function") hostWidget.close()
     else if (shell && typeof shell.hide === "function") shell.hide(pluginId)
     else close()
@@ -334,7 +359,7 @@ Item {
   Timer { id: suppressTimer; interval: 800; onTriggered: root.suppressFileChange = false }
   Timer { id: deleteTimer; interval: 3200; onTriggered: root.deleteArmed = false }
   Timer { id: detachOverlayCloseTimer; interval: 180; onTriggered: root.requestClose() }
-  Timer { id: pollTimer; interval: 4000; repeat: true; running: root.opened; onTriggered: if (!editor.activeFocus && !saveTimer.running) root.refreshNotes() }
+  Timer { id: pollTimer; interval: 4000; repeat: true; running: root.opened || root.appWindowOpened; onTriggered: if (!editor.activeFocus && !saveTimer.running) root.refreshNotes() }
 
   FileView {
     id: noteFile
@@ -418,14 +443,6 @@ Item {
     }
   }
 
-  Shortcut { sequence: "Escape"; onActivated: root.handleEscape() }
-  Shortcut { sequence: "Ctrl+N"; onActivated: root.createNote() }
-  Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
-  Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
-  Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
-  Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
-  Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
-
   KeyboardPanel {
     id: window
     anchorItem: root.anchorItem
@@ -438,6 +455,40 @@ Item {
     contentWidth: window.fittedContentWidth(Style.space(1240))
     contentHeight: window.cappedContentHeight(Style.space(780))
 
+    Item { id: panelHost; anchors.fill: parent }
+  }
+
+  FloatingWindow {
+    id: appWindow
+    visible: root.appWindowOpened
+    title: "OmaLeaf Notes"
+    color: Color.popups.background
+    implicitWidth: Style.space(1240)
+    implicitHeight: Style.space(780)
+    minimumSize: Qt.size(Style.space(760), Style.space(520))
+    onVisibleChanged: if (!visible && root.appWindowOpened) root.closeLibraryWindow()
+
+    Item {
+      id: appWindowHost
+      anchors.fill: parent
+      anchors.margins: Style.space(16)
+    }
+  }
+
+  Item {
+    id: libraryView
+    parent: root.appWindowOpened ? appWindowHost : panelHost
+    anchors.fill: parent
+
+    Shortcut { sequence: "Escape"; onActivated: root.handleEscape() }
+    Shortcut { sequence: "Ctrl+N"; onActivated: root.createNote() }
+    Shortcut { sequence: "Ctrl+F"; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
+    Shortcut { sequence: "Ctrl+P"; onActivated: root.togglePin() }
+    Shortcut { sequence: "Ctrl+S"; onActivated: { saveTimer.restart(); root.flushSave() } }
+    Shortcut { sequence: "Ctrl+Shift+Return"; onActivated: root.openLibraryInWindow() }
+    Shortcut { sequence: "Ctrl+Return"; onActivated: root.openSelectedInWindow() }
+    Shortcut { sequence: "Ctrl+Delete"; onActivated: root.requestTrash() }
+
     Column {
       anchors.fill: parent
       spacing: Style.space(10)
@@ -448,7 +499,7 @@ Item {
           spacing: Style.space(12)
 
           Column {
-            width: parent.width - newButton.width - parent.spacing
+            width: parent.width - headerActions.width - parent.spacing
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
             Text {
@@ -465,7 +516,18 @@ Item {
               font.pixelSize: Style.font.bodySmall
             }
           }
-          Button { id: newButton; anchors.verticalCenter: parent.verticalCenter; text: "New note"; iconText: "+"; active: true; onClicked: root.createNote() }
+          Row {
+            id: headerActions
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(7)
+            Button {
+              visible: !root.appWindowOpened
+              text: "Open in window"
+              tooltipText: "Open the complete OmaLeaf library as a normal tiled window"
+              onClicked: root.openLibraryInWindow()
+            }
+            Button { id: newButton; text: "New note"; iconText: "+"; active: true; onClicked: root.createNote() }
+          }
         }
 
         Rectangle { width: parent.width; height: 1; color: Util.alpha(Color.foreground, 0.18) }
@@ -694,7 +756,7 @@ Item {
                   id: editorActions
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(5)
-                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open in window"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); tooltipText: "Open this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
+                  Button { visible: root.selectedNote && !root.selectedNote.trashed; text: "Open note"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); tooltipText: "Open only this note as a normal tiled window"; onClicked: root.openSelectedInWindow() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.selectedNote && root.selectedNote.pinned ? "Unpin" : "Pin"; foreground: Util.alpha(Color.foreground, 0.58); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.togglePin() }
                   Button { visible: root.selectedNote && !root.selectedNote.trashed; text: root.deleteArmed ? "Confirm Trash" : "Trash"; foreground: root.deleteArmed ? Color.urgent : Util.alpha(Color.foreground, 0.52); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.requestTrash() }
                   Button { visible: root.selectedNote && root.selectedNote.trashed; text: "Restore"; foreground: Util.alpha(Color.foreground, 0.62); horizontalPadding: Style.space(8); verticalPadding: Style.space(5); onClicked: root.restoreSelected() }
@@ -768,7 +830,7 @@ Item {
           height: Style.space(22)
           spacing: Style.space(8)
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
-          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Tile  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Note  ·  Ctrl+Shift+Enter App  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
     }
   }
