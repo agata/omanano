@@ -772,7 +772,7 @@ Item {
                 height: Style.space(28)
                 spacing: Style.space(7)
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "Folder"; color: Util.alpha(Color.foreground, 0.4); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
-                Dropdown {
+                PlainTextDropdown {
                   property bool pointerInside: false
                   width: Style.space(150)
                   rowHeight: Style.space(28)

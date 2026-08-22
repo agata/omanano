@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.agata.omanano",
   "name": "OmaNano Notes",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Agata",
   "description": "A local-first Markdown notes library for Omarchy.",
   "kinds": [
