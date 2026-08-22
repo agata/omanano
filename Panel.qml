@@ -504,6 +504,7 @@ Item {
             spacing: Style.space(2)
             Text {
               text: "OMANANO  /  " + root.categoryLabel().toUpperCase()
+              textFormat: Text.PlainText
               color: Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.title
@@ -630,6 +631,7 @@ Item {
                   height: Style.space(28)
                   verticalAlignment: Text.AlignVCenter
                   text: section
+                  textFormat: Text.PlainText
                   color: Util.alpha(Color.foreground, 0.48)
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
@@ -678,13 +680,13 @@ Item {
                       width: parent.width
                       spacing: Style.space(6)
                       Text { visible: !!noteRow.modelData.pinned; text: "◆"; color: Color.accent; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
-                      Text { width: parent.width - x - rowDate.width; text: String(noteRow.modelData.title || "Untitled"); color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: noteRow.rowSelected; elide: Text.ElideRight }
+                      Text { width: parent.width - x - rowDate.width; text: String(noteRow.modelData.title || "Untitled"); textFormat: Text.PlainText; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: noteRow.rowSelected; elide: Text.ElideRight }
                       Text { id: rowDate; text: root.relativeTime(noteRow.modelData.modified); color: Util.alpha(Color.foreground, 0.48); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
                     }
-                    Text { width: parent.width; text: String(noteRow.modelData.snippet || "No additional text"); color: Util.alpha(Color.foreground, 0.58); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+                    Text { width: parent.width; text: String(noteRow.modelData.snippet || "No additional text"); textFormat: Text.PlainText; color: Util.alpha(Color.foreground, 0.58); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
                     Row {
                       spacing: Style.space(9)
-                      Text { visible: String(noteRow.modelData.folder || "") !== ""; text: String(noteRow.modelData.folder); color: Util.alpha(Color.foreground, 0.46); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
+                      Text { visible: String(noteRow.modelData.folder || "") !== ""; text: String(noteRow.modelData.folder); textFormat: Text.PlainText; color: Util.alpha(Color.foreground, 0.46); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
                       Text { visible: Number(noteRow.modelData.openTasks || 0) > 0; text: "☐ " + Number(noteRow.modelData.openTasks); color: Util.alpha(Color.foreground, 0.54); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
                     }
                   }
@@ -749,8 +751,8 @@ Item {
                 Column {
                   width: parent.width - editorActions.width - parent.spacing
                   anchors.verticalCenter: parent.verticalCenter
-                  Text { width: parent.width; text: root.selectedNote ? String(root.selectedNote.title) : "No note selected"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.title; font.bold: true; elide: Text.ElideRight }
-                  Text { width: parent.width; text: root.selectedNote ? (root.selectedNote.folder ? String(root.selectedNote.folder) : "Inbox") + " · " + root.relativeTime(root.selectedNote.modified) : "Choose a note from the list"; color: Util.alpha(Color.foreground, 0.5); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+                  Text { width: parent.width; text: root.selectedNote ? String(root.selectedNote.title) : "No note selected"; textFormat: Text.PlainText; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.title; font.bold: true; elide: Text.ElideRight }
+                  Text { width: parent.width; text: root.selectedNote ? (root.selectedNote.folder ? String(root.selectedNote.folder) : "Inbox") + " · " + root.relativeTime(root.selectedNote.modified) : "Choose a note from the list"; textFormat: Text.PlainText; color: Util.alpha(Color.foreground, 0.5); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
                 }
                 Row {
                   id: editorActions
@@ -830,7 +832,7 @@ Item {
           height: Style.space(22)
           spacing: Style.space(8)
           Rectangle { width: Style.space(7); height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter; color: saveTimer.running ? Color.accent : Color.foreground; opacity: saveTimer.running ? 1 : 0.32 }
-          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Detach  ·  Ctrl+Shift+Enter App  ·  Ctrl+click links"; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+          Text { width: parent.width - Style.space(18); anchors.verticalCenter: parent.verticalCenter; text: root.statusText + "  ·  Ctrl+N New  ·  Ctrl+F Search  ·  Ctrl+Enter Detach  ·  Ctrl+Shift+Enter App  ·  Ctrl+click links"; textFormat: Text.PlainText; color: Util.alpha(Color.foreground, 0.56); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
         }
     }
   }
@@ -863,7 +865,7 @@ Item {
       anchors.leftMargin: Style.space(9)
       anchors.rightMargin: Style.space(9)
       spacing: Style.space(6)
-      Text { width: parent.width - (categoryCount.visible ? categoryCount.width : 0); anchors.verticalCenter: parent.verticalCenter; text: categoryButton.label; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: categoryButton.selected; elide: Text.ElideRight }
+      Text { width: parent.width - (categoryCount.visible ? categoryCount.width : 0); anchors.verticalCenter: parent.verticalCenter; text: categoryButton.label; textFormat: Text.PlainText; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: categoryButton.selected; elide: Text.ElideRight }
       Text { id: categoryCount; visible: categoryButton.count >= 0; anchors.verticalCenter: parent.verticalCenter; text: String(categoryButton.count); color: Util.alpha(Color.foreground, 0.48); font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
     }
     MouseArea { id: categoryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: categoryButton.activated() }

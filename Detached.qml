@@ -68,7 +68,7 @@ ShellRoot {
           width: parent.width - status.width - parent.spacing
           anchors.verticalCenter: parent.verticalCenter
           spacing: 3
-          Text { width: parent.width; text: root.noteTitle; color: root.foregroundColor; font.pixelSize: 20; font.bold: true; elide: Text.ElideRight }
+          Text { width: parent.width; text: root.noteTitle; textFormat: Text.PlainText; color: root.foregroundColor; font.pixelSize: 20; font.bold: true; elide: Text.ElideRight }
           Text { width: parent.width; text: "Markdown note · Ctrl+click links"; color: root.alpha(root.foregroundColor, 0.55); font.pixelSize: 13; elide: Text.ElideRight }
         }
         Text { id: status; anchors.verticalCenter: parent.verticalCenter; text: saveTimer.running ? "Saving…" : "Saved"; color: saveTimer.running ? root.accentColor : root.alpha(root.foregroundColor, 0.55); font.pixelSize: 13 }
