@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Ui
 
 // Quattro-style single-select dropdown for user-controlled labels.
 // Every dynamic label is forced to plain text so folder names cannot be
