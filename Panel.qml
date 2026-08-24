@@ -28,6 +28,10 @@ Item {
   property bool deleteArmed: false
   property string pendingAction: ""
   property string pendingSelectId: ""
+  property string pendingReadId: ""
+  property string loadedNoteId: ""
+  property bool editorTooLarge: false
+  property int maxNoteBytes: 1024 * 1024
 
   readonly property string pluginId: "io.github.agata.omanano"
   readonly property string home: Quickshell.env("HOME")
@@ -152,7 +156,7 @@ Item {
       else if (category.indexOf("folder:") === 0) include = String(note.folder || "") === category.slice(7)
       if (!include) continue
       if (query) {
-        var haystack = (String(note.title || "") + "\n" + String(note.content || "") + "\n" + String(note.folder || "")).toLocaleLowerCase()
+        var haystack = (String(note.title || "") + "\n" + String(note.snippet || "") + "\n" + String(note.folder || "")).toLocaleLowerCase()
         if (haystack.indexOf(query) < 0) continue
       }
       var copy = {}
@@ -210,10 +214,37 @@ Item {
 
   function loadEditor() {
     editorLoading = true
-    editor.text = selectedNote ? String(selectedNote.content || "") : ""
+    editor.text = ""
     editor.cursorPosition = 0
     editorDirty = false
+    loadedNoteId = ""
+    editorTooLarge = false
     editorLoading = false
+    if (!selectedNote) return
+    if (selectedNote.tooLarge) {
+      editorTooLarge = true
+      statusText = "This note is too large to open safely"
+      return
+    }
+    pendingReadId = selectedId
+    startPendingRead()
+  }
+
+  function startPendingRead() {
+    if (readProcess.running || !pendingReadId) return
+    var note = findNote(pendingReadId)
+    if (!note) {
+      pendingReadId = ""
+      return
+    }
+    readProcess.requestedId = pendingReadId
+    readProcess.requestedTrashed = !!note.trashed
+    pendingReadId = ""
+    readProcess.outputText = ""
+    var command = [storePath, "read", readProcess.requestedId]
+    if (readProcess.requestedTrashed) command.push("--trashed")
+    readProcess.command = command
+    readProcess.running = true
   }
 
   function ensureVisibleSelection() {
@@ -246,7 +277,6 @@ Item {
       if (String(item.id) === String(id)) {
         var copy = {}
         for (var key in item) copy[key] = item[key]
-        copy.content = String(content)
         copy.title = inferredTitle(content)
         copy.snippet = plainSnippet(content)
         copy.modified = Date.now()
@@ -258,7 +288,7 @@ Item {
   }
 
   function flushSave() {
-    if (editorLoading || !editorDirty || !selectedNote || selectedNote.trashed) return
+    if (editorLoading || editorTooLarge || loadedNoteId !== selectedId || !editorDirty || !selectedNote || selectedNote.trashed) return
     saveTimer.stop()
     suppressFileChange = true
     noteFile.setText(editor.text)
@@ -270,10 +300,15 @@ Item {
 
   function detachSelectedNote() {
     if (!selectedNote || selectedNote.trashed) return
+    if (selectedNote.tooLarge) {
+      statusText = "This note is too large to detach safely"
+      return
+    }
     flushSave()
     detachedLaunchProcess.command = [
       pluginDir + "/scripts/omanano-window",
       dataRoot + "/notes/" + String(selectedNote.id),
+      String(selectedNote.id),
       String(selectedNote.title),
       String(Color.popups.background),
       String(Color.foreground),
@@ -368,6 +403,8 @@ Item {
       : ""
     watchChanges: true
     atomicWrites: true
+    preload: false
+    blockAllReads: true
     printErrors: false
     onFileChanged: {
       if (root.suppressFileChange) root.suppressFileChange = false
@@ -396,6 +433,7 @@ Item {
         var previousId = root.selectedId
         root.notes = Array.isArray(result.notes) ? result.notes : []
         root.folders = Array.isArray(result.folders) ? result.folders : []
+        root.maxNoteBytes = Math.max(1, Number(result.maxNoteBytes || root.maxNoteBytes))
         var wanted = root.pendingSelectId
         root.pendingSelectId = ""
         if (wanted && wanted !== "@result") root.selectedId = wanted
@@ -404,10 +442,51 @@ Item {
           root.selectedId = entries.length ? String(entries[0].id) : ""
         }
         if (root.selectedId !== previousId || !editor.activeFocus || !root.selectedNote) root.loadEditor()
-        root.statusText = root.notes.filter(function(note) { return !note.trashed }).length + " notes"
+        var visibleCount = root.notes.filter(function(note) { return !note.trashed }).length
+        root.statusText = visibleCount + " notes" + (result.notesTruncated || result.foldersTruncated ? " · Library limit reached" : "")
       } catch (error) {
         root.statusText = "Could not read the notes index"
       }
+    }
+  }
+
+  Process {
+    id: readProcess
+    property string requestedId: ""
+    property bool requestedTrashed: false
+    property string outputText: ""
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: readProcess.outputText = String(text || "").trim() }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var message = String(text || "").trim()
+        if (message && readProcess.requestedId === root.selectedId) root.statusText = message
+      }
+    }
+    onExited: function(exitCode) {
+      var requestedId = readProcess.requestedId
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(readProcess.outputText || "{}")
+          if (requestedId === root.selectedId) {
+            root.editorLoading = true
+            root.editorTooLarge = !!result.tooLarge
+            root.loadedNoteId = result.tooLarge ? "" : requestedId
+            editor.text = result.tooLarge ? "" : String(result.content || "")
+            editor.cursorPosition = 0
+            root.editorDirty = false
+            root.editorLoading = false
+            root.statusText = result.tooLarge
+              ? "This note is larger than " + Math.ceil(Number(result.maxBytes || root.maxNoteBytes) / 1048576) + " MiB"
+              : "Loaded"
+          }
+        } catch (_error) {
+          if (requestedId === root.selectedId) root.statusText = "Could not read this note"
+        }
+      } else if (requestedId === root.selectedId) {
+        root.statusText = "Could not load this note"
+      }
+      root.startPendingRead()
     }
   }
 
@@ -799,7 +878,7 @@ Item {
                 MarkdownEditor {
                   id: editor
                   width: parent.width
-                  enabled: root.selectedNote !== null && !root.selectedNote.trashed
+                  enabled: root.selectedNote !== null && !root.selectedNote.trashed && !root.editorTooLarge && root.loadedNoteId === root.selectedId
                   readOnly: root.selectedNote ? !!root.selectedNote.trashed : true
                   selectByMouse: true
                   wrapMode: TextEdit.Wrap
@@ -811,10 +890,14 @@ Item {
                   rightPadding: Style.space(10)
                   topPadding: Style.space(10)
                   bottomPadding: Style.space(20)
-                  placeholderText: root.selectedNote ? "Start writing Markdown…" : "Select or create a note"
+                  placeholderText: root.editorTooLarge
+                    ? "This note is too large to edit safely in OmaNano."
+                    : root.selectedNote
+                      ? (root.loadedNoteId === root.selectedId ? "Start writing Markdown…" : "Loading note…")
+                      : "Select or create a note"
                   placeholderTextColor: Util.alpha(Color.foreground, 0.3)
                   onTextChanged: {
-                    if (!root.editorLoading && root.selectedNote && !root.selectedNote.trashed) {
+                    if (!root.editorLoading && !root.editorTooLarge && root.loadedNoteId === root.selectedId && root.selectedNote && !root.selectedNote.trashed) {
                       root.editorDirty = true
                       root.statusText = "Saving…"
                       saveTimer.restart()

@@ -18,6 +18,11 @@ DATA_ROOT = Path(os.environ.get("OMANANO_DATA_DIR", "~/.local/share/omanano")).e
 NOTES_ROOT = DATA_ROOT / "notes"
 TRASH_ROOT = DATA_ROOT / "trash"
 STATE_PATH = DATA_ROOT / "state.json"
+MAX_NOTE_BYTES = 1024 * 1024
+MAX_INDEX_BYTES = 32 * 1024
+MAX_STATE_BYTES = 1024 * 1024
+MAX_LIST_NOTES = 2000
+MAX_LIST_FOLDERS = 2000
 
 
 def ensure_store() -> None:
@@ -29,9 +34,13 @@ def ensure_store() -> None:
 
 def read_json(path: Path, fallback):
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as handle:
+            payload = handle.read(MAX_STATE_BYTES + 1)
+        if len(payload) > MAX_STATE_BYTES:
+            return fallback
+        value = json.loads(payload.decode("utf-8"))
         return value
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return fallback
 
 
@@ -93,15 +102,20 @@ def title_and_snippet(content: str) -> tuple[str, str]:
     return title, " ".join(useful)[:180]
 
 
+def read_prefix(path: Path) -> str:
+    try:
+        with path.open("rb") as handle:
+            return handle.read(MAX_INDEX_BYTES).decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def note_record(path: Path, trashed: bool, pinned: set[str]) -> dict:
     root = TRASH_ROOT if trashed else NOTES_ROOT
     relative = path.relative_to(root).as_posix()
-    try:
-        content = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        content = ""
     stat = path.stat()
-    title, snippet = title_and_snippet(content)
+    prefix = read_prefix(path)
+    title, snippet = title_and_snippet(prefix)
     folder = path.parent.relative_to(root).as_posix()
     if folder == ".":
         folder = ""
@@ -109,11 +123,12 @@ def note_record(path: Path, trashed: bool, pinned: set[str]) -> dict:
         "id": relative,
         "title": title,
         "snippet": snippet,
-        "content": content,
         "folder": folder,
         "modified": int(stat.st_mtime * 1000),
         "pinned": (not trashed and relative in pinned),
-        "openTasks": len(re.findall(r"^\s*[-*+]\s+\[ \]", content, flags=re.MULTILINE)),
+        "openTasks": len(re.findall(r"^\s*[-*+]\s+\[ \]", prefix, flags=re.MULTILINE)),
+        "size": stat.st_size,
+        "tooLarge": stat.st_size > MAX_NOTE_BYTES,
         "trashed": trashed,
     }
 
@@ -123,17 +138,67 @@ def list_store(_args) -> None:
     state = read_json(STATE_PATH, {"pinned": []})
     pinned = set(state.get("pinned", []))
     notes = []
+    notes_truncated = False
     for trashed, root in ((False, NOTES_ROOT), (True, TRASH_ROOT)):
         for path in root.rglob("*.md"):
             if path.is_file():
+                if len(notes) >= MAX_LIST_NOTES:
+                    notes_truncated = True
+                    break
                 notes.append(note_record(path, trashed, pinned))
+        if notes_truncated:
+            break
     notes.sort(key=lambda item: (item["trashed"], not item["pinned"], -item["modified"], item["title"].lower()))
     folder_names = {item["folder"] for item in notes if not item["trashed"] and item["folder"]}
+    folders_truncated = False
     for directory in NOTES_ROOT.rglob("*"):
         if directory.is_dir():
+            if len(folder_names) >= MAX_LIST_FOLDERS:
+                folders_truncated = True
+                break
             folder_names.add(directory.relative_to(NOTES_ROOT).as_posix())
     folders = sorted(folder_names, key=str.casefold)
-    print(json.dumps({"notes": notes, "folders": folders}, ensure_ascii=False))
+    print(json.dumps({
+        "notes": notes,
+        "folders": folders,
+        "notesTruncated": notes_truncated,
+        "foldersTruncated": folders_truncated,
+        "maxNoteBytes": MAX_NOTE_BYTES,
+    }, ensure_ascii=False))
+
+
+def read_note(args) -> None:
+    ensure_store()
+    path = note_path(args.id, trashed=args.trashed)
+    if not path.is_file():
+        raise FileNotFoundError(args.id)
+    size = path.stat().st_size
+    if size > MAX_NOTE_BYTES:
+        print(json.dumps({
+            "id": safe_relative(args.id).as_posix(),
+            "tooLarge": True,
+            "size": size,
+            "maxBytes": MAX_NOTE_BYTES,
+        }))
+        return
+    with path.open("rb") as handle:
+        payload = handle.read(MAX_NOTE_BYTES + 1)
+    if len(payload) > MAX_NOTE_BYTES:
+        print(json.dumps({
+            "id": safe_relative(args.id).as_posix(),
+            "tooLarge": True,
+            "size": len(payload),
+            "maxBytes": MAX_NOTE_BYTES,
+        }))
+        return
+    content = payload.decode("utf-8")
+    print(json.dumps({
+        "id": safe_relative(args.id).as_posix(),
+        "content": content,
+        "tooLarge": False,
+        "size": len(payload),
+        "maxBytes": MAX_NOTE_BYTES,
+    }, ensure_ascii=False))
 
 
 def create_note(args) -> None:
@@ -241,6 +306,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("list").set_defaults(func=list_store)
+    read = subparsers.add_parser("read")
+    read.add_argument("id")
+    read.add_argument("--trashed", action="store_true")
+    read.set_defaults(func=read_note)
     create = subparsers.add_parser("create")
     create.add_argument("--folder", default="")
     create.set_defaults(func=create_note)

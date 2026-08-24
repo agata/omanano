@@ -18,7 +18,23 @@ listing=$($store list)
 [[ $(jq '.notes | length' <<<"$listing") -eq 1 ]]
 [[ $(jq -r '.notes[0].title' <<<"$listing") == "Release notes" ]]
 [[ $(jq -r '.notes[0].openTasks' <<<"$listing") -eq 1 ]]
+[[ $(jq -r '.notes[0] | has("content")' <<<"$listing") == false ]]
 [[ $(jq -r '.folders | contains(["Personal", "Work"])' <<<"$listing") == true ]]
+
+loaded=$($store read "$first")
+[[ $(jq -r '.tooLarge' <<<"$loaded") == false ]]
+[[ $(jq -r '.content' <<<"$loaded") == $'# Release notes\n\n- [ ] Capture screenshots\n- [x] Run tests' ]]
+
+oversized=$($store create | jq -r .id)
+truncate -s 1048577 "$OMANANO_DATA_DIR/notes/$oversized"
+oversized_listing=$($store list)
+[[ $(jq --arg id "$oversized" -r '.notes[] | select(.id == $id) | .tooLarge' <<<"$oversized_listing") == true ]]
+[[ ${#oversized_listing} -lt 10000 ]]
+oversized_read=$($store read "$oversized")
+[[ $(jq -r '.tooLarge' <<<"$oversized_read") == true ]]
+[[ $(jq -r 'has("content")' <<<"$oversized_read") == false ]]
+$store trash "$oversized" >/dev/null
+$store delete "$oversized" >/dev/null
 
 $store pin "$first" >/dev/null
 [[ $($store list | jq -r '.notes[0].pinned') == true ]]
@@ -43,5 +59,14 @@ if $store create --folder ../escape >/dev/null 2>&1; then
   echo "unsafe folder unexpectedly accepted" >&2
   exit 1
 fi
+
+export OMANANO_DATA_DIR="$test_dir/cap-data"
+mkdir -p "$OMANANO_DATA_DIR/notes"
+for index in $(seq 1 2001); do
+  : > "$OMANANO_DATA_DIR/notes/$index.md"
+done
+capped_listing=$($store list)
+[[ $(jq '.notes | length' <<<"$capped_listing") -eq 2000 ]]
+[[ $(jq -r '.notesTruncated' <<<"$capped_listing") == true ]]
 
 echo "OmaNano store tests passed"

@@ -17,7 +17,7 @@ OmaNano is a local-first Markdown notes library designed for Omarchy. Capture a 
 ## What it can do
 
 - Browse notes by recency, folder, pinned state, or Trash
-- Search titles and Markdown content instantly
+- Search titles, folders, and note previews instantly
 - Edit plain Markdown with subtle highlighting for headings, lists, tasks, code, and URLs
 - Open links with `Ctrl+click`
 - Create folders, pin important notes, trash notes, and restore them later
@@ -27,6 +27,8 @@ OmaNano is a local-first Markdown notes library designed for Omarchy. Capture a 
 - Keep all notes as ordinary files under `~/.local/share/omanano/notes/`
 
 OmaNano makes no network requests and requires no account. Your notes stay on your machine in a format you can read with any text editor.
+
+The library index contains metadata and short previews only. Note bodies are loaded on demand for the selected note, with a 1 MiB safety limit; larger files remain untouched and can still be opened with another editor. The visible library is capped at 2,000 notes and 2,000 folders to keep the long-lived Omarchy shell memory-bounded.
 
 ## Install
 
